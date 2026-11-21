@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Check,
+  Copy,
   Database,
   Edit3,
   Loader2,
@@ -90,6 +91,7 @@ export default function AdminPage() {
 
   const [savingSettings, setSavingSettings] = useState(false);
   const [testingSupabase, setTestingSupabase] = useState(false);
+  const [sqlCopied, setSqlCopied] = useState(false);
 
   const showToast = useCallback((type: 'ok' | 'err', text: string) => {
     setToast({ type, text });
@@ -432,6 +434,36 @@ export default function AdminPage() {
     }
   };
 
+  const supabaseFixSql = `ALTER TABLE public.admin_auth
+  ADD COLUMN IF NOT EXISTS username TEXT NOT NULL DEFAULT 'admin';
+
+GRANT USAGE ON SCHEMA public TO service_role;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
+
+DO $$
+DECLARE tbl TEXT;
+BEGIN
+  FOR tbl IN SELECT unnest(ARRAY['categories','products','orders','order_items','site_settings','admin_auth','admin_login_attempts'])
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS "service_role_full_access" ON public.%I;', tbl);
+    EXECUTE format('CREATE POLICY "service_role_full_access" ON public.%I FOR ALL TO service_role USING (true) WITH CHECK (true);', tbl);
+  END LOOP;
+END $$;`;
+
+  const handleCopySql = async () => {
+    try {
+      await navigator.clipboard.writeText(supabaseFixSql);
+      setSqlCopied(true);
+      showToast('ok', 'Script SQL copié dans le presse-papiers.');
+      setTimeout(() => setSqlCopied(false), 2500);
+    } catch {
+      showToast('err', 'Copie impossible — sélectionnez le bloc SQL manuellement.');
+    }
+  };
+
   const handleTestSupabase = async () => {
     setTestingSupabase(true);
     try {
@@ -627,7 +659,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen pt-32 sm:pt-36 pb-20 max-w-7xl mx-auto px-4 sm:px-6 space-y-8">
+    <div className="min-h-screen pt-36 sm:pt-40 pb-20 max-w-7xl mx-auto px-4 sm:px-6 space-y-8">
       {toast && (
         <div
           className={`fixed bottom-5 end-5 z-50 px-4 py-3 rounded-xl border text-xs sm:text-sm font-medium shadow-xl backdrop-blur-xl ${
@@ -700,7 +732,14 @@ export default function AdminPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('customization')}
+              onClick={() => {
+                setActiveTab('customization');
+                setTimeout(() => {
+                  document
+                    .getElementById('supabase-sql-helper')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 80);
+              }}
               className="min-h-[36px] px-3.5 rounded-xl border border-amber-400/30 text-xs font-medium text-amber-100 hover:bg-amber-500/15 transition-colors cursor-pointer whitespace-nowrap"
             >
               Voir l’aide SQL
@@ -1121,16 +1160,32 @@ export default function AdminPage() {
           </div>
 
           {overview?.storage_mode !== 'supabase' && (
-            <div className="glass-surface rounded-2xl p-6 space-y-3 border border-amber-500/25">
-              <h3 className="text-sm font-semibold text-white">
-                Activer Supabase PostgreSQL (SQL à exécuter dans Supabase → SQL Editor)
-              </h3>
-              <p className="text-xs text-zinc-400">
-                Si vos tables existent déjà et renvoient l’erreur <code className="text-amber-300">42501</code>, copiez et exécutez le fichier complet <code className="text-zinc-200">supabase/schema.sql</code> ou ce bloc de permissions dans votre éditeur SQL Supabase, puis cliquez sur « Tester la connexion Supabase » :
+            <div
+              id="supabase-sql-helper"
+              className="glass-surface rounded-2xl p-6 space-y-4 border border-amber-500/25"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-white">
+                  Activer Supabase PostgreSQL (à exécuter dans Supabase → SQL Editor)
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => void handleCopySql()}
+                  className="min-h-[36px] px-3.5 rounded-xl bg-white text-zinc-950 hover:bg-zinc-200 text-xs font-semibold inline-flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+                >
+                  {sqlCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{sqlCopied ? 'Copié' : 'Copier le SQL'}</span>
+                </button>
+              </div>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Vos tables existent déjà dans <strong className="text-zinc-200">Table Editor</strong>, mais PostgreSQL refuse encore l’accès au rôle serveur (<code className="text-amber-300">42501</code>). Ouvrez <strong className="text-zinc-200">SQL Editor</strong> (icône <code className="text-zinc-200">&gt;_</code> dans la barre gauche de Supabase) → <strong className="text-zinc-200">New query</strong>, collez ce script et cliquez sur <strong className="text-zinc-200">Run</strong>, puis cliquez sur « Tester la connexion Supabase » ci-dessus :
               </p>
-              <pre className="p-3.5 rounded-xl bg-black/60 border border-white/10 text-[11px] font-mono text-zinc-200 overflow-x-auto select-all">{`GRANT USAGE ON SCHEMA public TO service_role;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO service_role;`}</pre>
+              <pre
+                dir="ltr"
+                className="p-3.5 rounded-xl bg-black/60 border border-white/10 text-[11px] font-mono text-zinc-200 overflow-x-auto select-all"
+              >
+                {supabaseFixSql}
+              </pre>
             </div>
           )}
 

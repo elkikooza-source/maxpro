@@ -78,11 +78,15 @@ CREATE TABLE IF NOT EXISTS public.site_settings (
 
 CREATE TABLE IF NOT EXISTS public.admin_auth (
   id TEXT PRIMARY KEY,
+  username TEXT NOT NULL DEFAULT 'admin',
   password_hash TEXT NOT NULL,
   password_salt TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE public.admin_auth
+  ADD COLUMN IF NOT EXISTS username TEXT NOT NULL DEFAULT 'admin';
 
 CREATE TABLE IF NOT EXISTS public.admin_login_attempts (
   ip TEXT PRIMARY KEY,

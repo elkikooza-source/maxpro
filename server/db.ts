@@ -19,6 +19,7 @@ import { resolveConfinedPath, sanitizeSlug, type SupportedImageFormat } from './
 
 export interface AdminAuthRecord {
   id: string;
+  username: string;
   password_hash: string;
   password_salt: string;
 }
@@ -180,6 +181,7 @@ class StoreDatabase {
 
       CREATE TABLE IF NOT EXISTS admin_auth (
         id TEXT PRIMARY KEY,
+        username TEXT NOT NULL DEFAULT 'admin',
         password_hash TEXT NOT NULL,
         password_salt TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -193,6 +195,12 @@ class StoreDatabase {
         last_attempt_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
+
+    try {
+      this.sqlite.exec("ALTER TABLE admin_auth ADD COLUMN username TEXT NOT NULL DEFAULT 'admin'");
+    } catch {
+      // Column already exists
+    }
   }
 
   private seedSqliteIfEmpty(): void {
@@ -1173,23 +1181,39 @@ class StoreDatabase {
   // Admin auth persistence
   public async getAdminAuthRecord(): Promise<AdminAuthRecord | null> {
     if (this.activeMode === 'supabase') {
-      const res = await this.supabaseFetch<AdminAuthRecord[]>(
-        'admin_auth?id=eq.primary&select=id,password_hash,password_salt&limit=1'
+      const res = await this.supabaseFetch<Array<Partial<AdminAuthRecord>>>(
+        'admin_auth?id=eq.primary&select=*&limit=1'
       );
-      if (res.ok && res.data?.[0]) {
-        return res.data[0];
+      if (res.ok && res.data?.[0]?.password_hash) {
+        return {
+          id: String(res.data[0].id || 'primary'),
+          username: String(res.data[0].username || 'admin'),
+          password_hash: String(res.data[0].password_hash),
+          password_salt: String(res.data[0].password_salt || ''),
+        };
       }
     }
     const row = this.sqlite
-      .prepare('SELECT id, password_hash, password_salt FROM admin_auth WHERE id = ? LIMIT 1')
-      .get('primary') as AdminAuthRecord | undefined;
-    return row || null;
+      .prepare('SELECT id, username, password_hash, password_salt FROM admin_auth WHERE id = ? LIMIT 1')
+      .get('primary') as Partial<AdminAuthRecord> | undefined;
+    if (!row || !row.password_hash) return null;
+    return {
+      id: String(row.id || 'primary'),
+      username: String(row.username || 'admin'),
+      password_hash: String(row.password_hash),
+      password_salt: String(row.password_salt || ''),
+    };
   }
 
-  public async createAdminAuthRecord(passwordHash: string, passwordSalt: string): Promise<boolean> {
+  public async createAdminAuthRecord(
+    username: string,
+    passwordHash: string,
+    passwordSalt: string
+  ): Promise<boolean> {
     const existing = await this.getAdminAuthRecord();
     if (existing) return false;
     const now = new Date().toISOString();
+    const cleanUser = username.trim() || 'admin';
 
     if (this.activeMode === 'supabase') {
       const res = await this.supabaseFetch('admin_auth', {
@@ -1197,6 +1221,7 @@ class StoreDatabase {
         body: JSON.stringify([
           {
             id: 'primary',
+            username: cleanUser,
             password_hash: passwordHash,
             password_salt: passwordSalt,
             created_at: now,
@@ -1205,14 +1230,31 @@ class StoreDatabase {
         ]),
       });
       if (res.ok) return true;
+
+      // Retry without username if user's existing Supabase table hasn't added the column yet
+      if (res.errorText.includes('username')) {
+        const retry = await this.supabaseFetch('admin_auth', {
+          method: 'POST',
+          body: JSON.stringify([
+            {
+              id: 'primary',
+              password_hash: passwordHash,
+              password_salt: passwordSalt,
+              created_at: now,
+              updated_at: now,
+            },
+          ]),
+        });
+        if (retry.ok) return true;
+      }
     }
 
     const info = this.sqlite
       .prepare(
-        `INSERT OR IGNORE INTO admin_auth (id, password_hash, password_salt, created_at, updated_at)
-         VALUES ('primary', ?, ?, ?, ?)`
+        `INSERT OR IGNORE INTO admin_auth (id, username, password_hash, password_salt, created_at, updated_at)
+         VALUES ('primary', ?, ?, ?, ?, ?)`
       )
-      .run(passwordHash, passwordSalt, now, now);
+      .run(cleanUser, passwordHash, passwordSalt, now, now);
     return info.changes > 0;
   }
 

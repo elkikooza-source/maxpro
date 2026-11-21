@@ -60,6 +60,8 @@ export default function AdminPage() {
 
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [statusError, setStatusError] = useState('');
+  const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [authError, setAuthError] = useState('');
@@ -112,6 +114,7 @@ export default function AdminPage() {
   );
 
   const loadAuthStatus = useCallback(async () => {
+    setStatusError('');
     try {
       const headers: HeadersInit = adminToken ? { Authorization: `Bearer ${adminToken}` } : {};
       const res = await fetch('/api/admin/auth/status', { headers });
@@ -121,9 +124,11 @@ export default function AdminPage() {
         if (!data.authenticated && adminToken) {
           setAdminToken(null);
         }
+      } else {
+        setStatusError('Impossible de vérifier le statut de connexion administrateur.');
       }
     } catch {
-      // Ignore transient status fetch failure
+      setStatusError('Service API inaccessible. Vérifiez le déploiement du serveur.');
     } finally {
       setAuthLoading(false);
     }
@@ -180,8 +185,12 @@ export default function AdminPage() {
   const handleSetup = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
-    if (password.length < 8) {
-      setAuthError('Le mot de passe doit contenir au moins 8 caractères.');
+    if (username.trim().length < 2) {
+      setAuthError('L’identifiant doit contenir au moins 2 caractères.');
+      return;
+    }
+    if (password.length < 6) {
+      setAuthError('Le mot de passe doit contenir au moins 6 caractères.');
       return;
     }
     if (password !== confirmPassword) {
@@ -193,7 +202,7 @@ export default function AdminPage() {
       const res = await fetch('/api/admin/auth/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ username: username.trim(), password }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -220,7 +229,7 @@ export default function AdminPage() {
       const res = await fetch('/api/admin/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ username: username.trim(), password }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -441,7 +450,20 @@ export default function AdminPage() {
     return (
       <div className="min-h-screen pt-36 pb-20 px-4 flex items-center justify-center">
         <div className="w-full max-w-md glass-panel rounded-3xl p-6 sm:p-8 space-y-6">
-          {authStatus?.locked ? (
+          {statusError ? (
+            <div className="space-y-4 text-center py-2">
+              <p className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-200">
+                {statusError}
+              </p>
+              <button
+                type="button"
+                onClick={() => void loadAuthStatus()}
+                className="min-h-[44px] px-6 rounded-xl bg-white text-zinc-950 font-semibold text-sm hover:bg-zinc-200 transition-colors cursor-pointer"
+              >
+                Réessayer
+              </button>
+            </div>
+          ) : authStatus?.locked ? (
             <div className="text-center space-y-4 py-4">
               <div className="w-12 h-12 rounded-2xl bg-red-500/15 border border-red-500/30 flex items-center justify-center mx-auto text-red-300">
                 <ShieldAlert className="w-6 h-6" />
@@ -475,11 +497,25 @@ export default function AdminPage() {
               )}
 
               <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-zinc-300">{t.admin.usernameLabel}</span>
+                <input
+                  type="text"
+                  required
+                  minLength={2}
+                  autoComplete="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/45 border border-white/10 text-sm text-white focus:outline-none focus:border-white/35"
+                />
+              </label>
+
+              <label className="block space-y-1.5">
                 <span className="text-xs font-medium text-zinc-300">{t.admin.passwordLabel}</span>
                 <input
                   type="password"
                   required
-                  minLength={8}
+                  minLength={6}
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/45 border border-white/10 text-sm text-white focus:outline-none focus:border-white/35"
@@ -493,7 +529,8 @@ export default function AdminPage() {
                 <input
                   type="password"
                   required
-                  minLength={8}
+                  minLength={6}
+                  autoComplete="new-password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/45 border border-white/10 text-sm text-white focus:outline-none focus:border-white/35"
@@ -527,10 +564,23 @@ export default function AdminPage() {
               )}
 
               <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-zinc-300">{t.admin.usernameLabel}</span>
+                <input
+                  type="text"
+                  required
+                  autoComplete="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/45 border border-white/10 text-sm text-white focus:outline-none focus:border-white/35"
+                />
+              </label>
+
+              <label className="block space-y-1.5">
                 <span className="text-xs font-medium text-zinc-300">{t.admin.passwordLabel}</span>
                 <input
                   type="password"
                   required
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/45 border border-white/10 text-sm text-white focus:outline-none focus:border-white/35"

@@ -301,15 +301,21 @@ export function createApiApp(): Express {
       return res.status(409).json({ error: 'Le compte administrateur est déjà configuré.' });
     }
 
+    const username = String(req.body?.username || req.body?.login || 'admin').trim();
     const password = String(req.body?.password || '');
-    if (password.length < 8 || password.length > 128) {
+    if (username.length < 2 || username.length > 64) {
       return res.status(400).json({
-        error: 'Le mot de passe doit contenir au moins 8 caractères.',
+        error: 'L’identifiant doit contenir entre 2 et 64 caractères.',
+      });
+    }
+    if (password.length < 6 || password.length > 128) {
+      return res.status(400).json({
+        error: 'Le mot de passe doit contenir au moins 6 caractères.',
       });
     }
 
     const { hash, salt } = hashPassword(password);
-    const created = await storeDb.createAdminAuthRecord(hash, salt);
+    const created = await storeDb.createAdminAuthRecord(username, hash, salt);
     if (!created) {
       return res.status(409).json({ error: 'Le compte administrateur est déjà configuré.' });
     }
@@ -331,22 +337,28 @@ export function createApiApp(): Express {
       });
     }
 
+    const username = String(req.body?.username || req.body?.login || '').trim();
     const password = String(req.body?.password || '');
-    if (!password) {
-      return res.status(400).json({ error: 'Veuillez saisir le mot de passe.' });
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Veuillez saisir votre identifiant et mot de passe.' });
     }
 
     const envPasscode = (process.env.ADMIN_PASSCODE || '').trim();
+    const envUsername = (process.env.ADMIN_USERNAME || 'admin').trim() || 'admin';
     let valid = false;
 
     if (envPasscode.length > 0) {
-      valid = verifyEnvPasscode(password, envPasscode);
+      const userMatch = verifyEnvPasscode(username, envUsername);
+      const passMatch = verifyEnvPasscode(password, envPasscode);
+      valid = userMatch && passMatch;
     } else {
       const rec = await storeDb.getAdminAuthRecord();
       if (!rec) {
         return res.status(400).json({ error: 'Configuration initiale requise.' });
       }
-      valid = verifyPassword(password, rec.password_hash, rec.password_salt);
+      const userMatch = verifyEnvPasscode(username, rec.username || 'admin');
+      const passMatch = verifyPassword(password, rec.password_hash, rec.password_salt);
+      valid = userMatch && passMatch;
     }
 
     if (!valid) {
@@ -354,7 +366,7 @@ export function createApiApp(): Express {
       return res.status(updated.locked ? 429 : 401).json({
         error: updated.locked
           ? '3 tentatives échouées. Accès bloqué pendant 15 minutes.'
-          : `Mot de passe incorrect (${updated.attemptsRemaining} essai(s) restant(s)).`,
+          : `Identifiant ou mot de passe incorrect (${updated.attemptsRemaining} essai(s) restant(s)).`,
         locked: updated.locked,
         remainingSeconds: updated.remainingSeconds,
         attemptsRemaining: updated.attemptsRemaining,

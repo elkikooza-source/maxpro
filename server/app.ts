@@ -465,7 +465,8 @@ export function createApiApp(): Express {
       return res.status(201).json({ product: created });
     } catch (err) {
       console.error('Create product error:', err);
-      return res.status(500).json({ error: 'Erreur lors de la création du produit.' });
+      const message = err instanceof Error ? err.message : 'Erreur lors de la création du produit.';
+      return res.status(500).json({ error: message });
     }
   });
 
@@ -521,95 +522,135 @@ export function createApiApp(): Express {
       return res.json({ product: updated });
     } catch (err) {
       console.error('Update product error:', err);
-      return res.status(500).json({ error: 'Erreur lors de la mise à jour.' });
+      const message = err instanceof Error ? err.message : 'Erreur lors de la mise à jour.';
+      return res.status(500).json({ error: message });
     }
   });
 
   app.delete('/api/admin/products/:id', requireAdmin, async (req, res) => {
-    const deleted = await storeDb.deleteProduct(req.params.id);
-    if (!deleted) return res.status(404).json({ error: 'Produit introuvable.' });
-    return res.json({ ok: true });
+    try {
+      const deleted = await storeDb.deleteProduct(req.params.id);
+      if (!deleted) return res.status(404).json({ error: 'Produit introuvable.' });
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('Delete product error:', err);
+      const message = err instanceof Error ? err.message : 'Erreur lors de la suppression.';
+      return res.status(500).json({ error: message });
+    }
   });
 
   app.get('/api/admin/orders', requireAdmin, async (_req, res) => {
-    const orders = await storeDb.getOrders();
-    res.json({ orders });
+    try {
+      const orders = await storeDb.getOrders();
+      return res.json({ orders });
+    } catch (err) {
+      console.error('Get orders error:', err);
+      return res.status(500).json({ error: 'Impossible de charger les commandes.' });
+    }
   });
 
   app.patch('/api/admin/orders/:id/status', requireAdmin, async (req, res) => {
-    const status = String(req.body?.status || '') as OrderStatus;
-    if (!ORDER_STATUSES.includes(status)) {
-      return res.status(400).json({ error: 'Statut de commande invalide.' });
+    try {
+      const status = String(req.body?.status || '') as OrderStatus;
+      if (!ORDER_STATUSES.includes(status)) {
+        return res.status(400).json({ error: 'Statut de commande invalide.' });
+      }
+      const updated = await storeDb.updateOrderStatus(req.params.id, status);
+      if (!updated) return res.status(404).json({ error: 'Commande introuvable.' });
+      return res.json({ order: updated });
+    } catch (err) {
+      console.error('Update order status error:', err);
+      const message = err instanceof Error ? err.message : 'Impossible de modifier le statut.';
+      return res.status(500).json({ error: message });
     }
-    const updated = await storeDb.updateOrderStatus(req.params.id, status);
-    if (!updated) return res.status(404).json({ error: 'Commande introuvable.' });
-    return res.json({ order: updated });
   });
 
   app.get('/api/admin/categories', requireAdmin, async (_req, res) => {
-    const categories = await storeDb.getCategories(false);
-    res.json({ categories });
+    try {
+      const categories = await storeDb.getCategories(false);
+      return res.json({ categories });
+    } catch (err) {
+      console.error('Get categories error:', err);
+      return res.status(500).json({ error: 'Impossible de charger les catégories.' });
+    }
   });
 
   app.put('/api/admin/categories/:id', requireAdmin, async (req, res) => {
-    const b = req.body || {};
-    if (b.image_url !== undefined && !isSafeUrl(String(b.image_url))) {
-      return res.status(400).json({ error: 'URL d’image invalide.' });
+    try {
+      const b = req.body || {};
+      if (b.image_url !== undefined && !isSafeUrl(String(b.image_url))) {
+        return res.status(400).json({ error: 'URL d’image invalide.' });
+      }
+      const updated = await storeDb.updateCategory(req.params.id, {
+        name_fr: b.name_fr !== undefined ? String(b.name_fr).trim() : undefined,
+        name_ar: b.name_ar !== undefined ? String(b.name_ar).trim() : undefined,
+        description_fr: b.description_fr !== undefined ? String(b.description_fr).trim() : undefined,
+        description_ar: b.description_ar !== undefined ? String(b.description_ar).trim() : undefined,
+        image_url: b.image_url !== undefined ? String(b.image_url).trim() : undefined,
+        is_active: typeof b.is_active === 'boolean' ? b.is_active : undefined,
+      });
+      if (!updated) return res.status(404).json({ error: 'Catégorie introuvable.' });
+      return res.json({ category: updated });
+    } catch (err) {
+      console.error('Update category error:', err);
+      const message = err instanceof Error ? err.message : 'Erreur lors de la mise à jour.';
+      return res.status(500).json({ error: message });
     }
-    const updated = await storeDb.updateCategory(req.params.id, {
-      name_fr: b.name_fr !== undefined ? String(b.name_fr).trim() : undefined,
-      name_ar: b.name_ar !== undefined ? String(b.name_ar).trim() : undefined,
-      description_fr: b.description_fr !== undefined ? String(b.description_fr).trim() : undefined,
-      description_ar: b.description_ar !== undefined ? String(b.description_ar).trim() : undefined,
-      image_url: b.image_url !== undefined ? String(b.image_url).trim() : undefined,
-      is_active: typeof b.is_active === 'boolean' ? b.is_active : undefined,
-    });
-    if (!updated) return res.status(404).json({ error: 'Catégorie introuvable.' });
-    return res.json({ category: updated });
   });
 
   app.get('/api/admin/settings', requireAdmin, async (_req, res) => {
-    const settings = await storeDb.getSettings();
-    res.json({ settings });
+    try {
+      const settings = await storeDb.getSettings();
+      return res.json({ settings });
+    } catch (err) {
+      console.error('Get settings error:', err);
+      return res.status(500).json({ error: 'Impossible de charger les paramètres.' });
+    }
   });
 
   app.put('/api/admin/settings', requireAdmin, async (req, res) => {
-    const b = req.body || {};
-    const urlFields = ['logo_url', 'hero_image'] as const;
-    for (const field of urlFields) {
-      if (b[field] !== undefined && !isSafeUrl(String(b[field]))) {
-        return res.status(400).json({ error: `URL invalide pour ${field}.` });
+    try {
+      const b = req.body || {};
+      const urlFields = ['logo_url', 'hero_image'] as const;
+      for (const field of urlFields) {
+        if (b[field] !== undefined && !isSafeUrl(String(b[field]))) {
+          return res.status(400).json({ error: `URL invalide pour ${field}.` });
+        }
       }
-    }
 
-    const patch: Partial<SiteSettings> = {};
-    if (b.brand_name !== undefined) patch.brand_name = String(b.brand_name).trim();
-    if (b.brand_tagline !== undefined) patch.brand_tagline = String(b.brand_tagline).trim();
-    if (b.logo_url !== undefined) patch.logo_url = String(b.logo_url).trim();
-    if (b.hero_image !== undefined) patch.hero_image = String(b.hero_image).trim();
-    if (b.hero_title_fr !== undefined) patch.hero_title_fr = String(b.hero_title_fr).trim();
-    if (b.hero_title_ar !== undefined) patch.hero_title_ar = String(b.hero_title_ar).trim();
-    if (b.hero_subtitle_fr !== undefined) patch.hero_subtitle_fr = String(b.hero_subtitle_fr).trim();
-    if (b.hero_subtitle_ar !== undefined) patch.hero_subtitle_ar = String(b.hero_subtitle_ar).trim();
-    if (typeof b.promo_enabled === 'boolean') patch.promo_enabled = b.promo_enabled;
-    if (b.promo_text_fr !== undefined) patch.promo_text_fr = String(b.promo_text_fr).trim();
-    if (b.promo_text_ar !== undefined) patch.promo_text_ar = String(b.promo_text_ar).trim();
-    if (b.shipping_fee !== undefined) patch.shipping_fee = Math.max(0, Number(b.shipping_fee) || 0);
-    if (b.free_shipping_threshold !== undefined)
-      patch.free_shipping_threshold = Math.max(0, Number(b.free_shipping_threshold) || 0);
-    if (b.contact_location_fr !== undefined)
-      patch.contact_location_fr = String(b.contact_location_fr).trim();
-    if (b.contact_location_ar !== undefined)
-      patch.contact_location_ar = String(b.contact_location_ar).trim();
-    if (b.contact_email !== undefined) patch.contact_email = String(b.contact_email).trim();
-    if (b.contact_phone !== undefined) patch.contact_phone = String(b.contact_phone).trim();
-    if (b.contact_whatsapp !== undefined) patch.contact_whatsapp = String(b.contact_whatsapp).trim();
-    if (Array.isArray(b.featured_product_ids)) {
-      patch.featured_product_ids = b.featured_product_ids.map((id: unknown) => String(id));
-    }
+      const patch: Partial<SiteSettings> = {};
+      if (b.brand_name !== undefined) patch.brand_name = String(b.brand_name).trim();
+      if (b.brand_tagline !== undefined) patch.brand_tagline = String(b.brand_tagline).trim();
+      if (b.logo_url !== undefined) patch.logo_url = String(b.logo_url).trim();
+      if (b.hero_image !== undefined) patch.hero_image = String(b.hero_image).trim();
+      if (b.hero_title_fr !== undefined) patch.hero_title_fr = String(b.hero_title_fr).trim();
+      if (b.hero_title_ar !== undefined) patch.hero_title_ar = String(b.hero_title_ar).trim();
+      if (b.hero_subtitle_fr !== undefined) patch.hero_subtitle_fr = String(b.hero_subtitle_fr).trim();
+      if (b.hero_subtitle_ar !== undefined) patch.hero_subtitle_ar = String(b.hero_subtitle_ar).trim();
+      if (typeof b.promo_enabled === 'boolean') patch.promo_enabled = b.promo_enabled;
+      if (b.promo_text_fr !== undefined) patch.promo_text_fr = String(b.promo_text_fr).trim();
+      if (b.promo_text_ar !== undefined) patch.promo_text_ar = String(b.promo_text_ar).trim();
+      if (b.shipping_fee !== undefined) patch.shipping_fee = Math.max(0, Number(b.shipping_fee) || 0);
+      if (b.free_shipping_threshold !== undefined)
+        patch.free_shipping_threshold = Math.max(0, Number(b.free_shipping_threshold) || 0);
+      if (b.contact_location_fr !== undefined)
+        patch.contact_location_fr = String(b.contact_location_fr).trim();
+      if (b.contact_location_ar !== undefined)
+        patch.contact_location_ar = String(b.contact_location_ar).trim();
+      if (b.contact_email !== undefined) patch.contact_email = String(b.contact_email).trim();
+      if (b.contact_phone !== undefined) patch.contact_phone = String(b.contact_phone).trim();
+      if (b.contact_whatsapp !== undefined) patch.contact_whatsapp = String(b.contact_whatsapp).trim();
+      if (Array.isArray(b.featured_product_ids)) {
+        patch.featured_product_ids = b.featured_product_ids.map((id: unknown) => String(id));
+      }
 
-    const updated = await storeDb.updateSettings(patch);
-    return res.json({ settings: updated });
+      const updated = await storeDb.updateSettings(patch);
+      return res.json({ settings: updated });
+    } catch (err) {
+      console.error('Update settings error:', err);
+      const message = err instanceof Error ? err.message : 'Erreur lors de la sauvegarde.';
+      return res.status(500).json({ error: message });
+    }
   });
 
   // Magic-byte validated image upload (JPG / PNG / WebP up to 5MB)

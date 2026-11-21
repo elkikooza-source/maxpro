@@ -365,6 +365,9 @@ export default function AdminPage() {
     });
     if (res.ok) {
       await Promise.all([loadAdminData(), refreshStorefront()]);
+    } else {
+      const json = await res.json().catch(() => ({}));
+      showToast('err', json?.error || 'Impossible de modifier le produit.');
     }
   };
 
@@ -374,6 +377,9 @@ export default function AdminPage() {
       setDeletingProductId(null);
       showToast('ok', 'Produit supprimé.');
       await Promise.all([loadAdminData(), refreshStorefront()]);
+    } else {
+      const json = await res.json().catch(() => ({}));
+      showToast('err', json?.error || 'Impossible de supprimer le produit.');
     }
   };
 
@@ -386,7 +392,8 @@ export default function AdminPage() {
       showToast('ok', 'Statut mis à jour.');
       await loadAdminData();
     } else {
-      showToast('err', 'Impossible de modifier le statut.');
+      const json = await res.json().catch(() => ({}));
+      showToast('err', json?.error || 'Impossible de modifier le statut.');
     }
   };
 
@@ -403,7 +410,7 @@ export default function AdminPage() {
         showToast('ok', 'Personnalisation enregistrée.');
         await Promise.all([loadAdminData(), refreshStorefront()]);
       } else {
-        const json = await res.json();
+        const json = await res.json().catch(() => ({}));
         showToast('err', json?.error || 'Erreur de sauvegarde.');
       }
     } finally {
@@ -420,7 +427,8 @@ export default function AdminPage() {
       showToast('ok', `Catégorie « ${cat.name_fr} » enregistrée.`);
       await Promise.all([loadAdminData(), refreshStorefront()]);
     } else {
-      showToast('err', 'Erreur lors de la mise à jour de la catégorie.');
+      const json = await res.json().catch(() => ({}));
+      showToast('err', json?.error || 'Erreur lors de la mise à jour de la catégorie.');
     }
   };
 
@@ -665,6 +673,41 @@ export default function AdminPage() {
           </button>
         </div>
       </div>
+
+      {overview && overview.storage_mode !== 'supabase' && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-300 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-xs sm:text-sm font-semibold text-amber-100">
+                Supabase non lié — Stockage temporaire local actif
+              </p>
+              <p className="text-xs text-amber-200/80">
+                {overview.supabase_error ||
+                  'Ajoutez SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY et exécutez supabase/schema.sql dans Supabase SQL Editor pour persister vos produits et commandes.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => void handleTestSupabase()}
+              disabled={testingSupabase}
+              className="min-h-[36px] px-3.5 rounded-xl bg-amber-300 text-zinc-950 text-xs font-semibold hover:bg-amber-200 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              {testingSupabase ? 'Test...' : 'Tester Supabase'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('customization')}
+              className="min-h-[36px] px-3.5 rounded-xl border border-amber-400/30 text-xs font-medium text-amber-100 hover:bg-amber-500/15 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              Voir l’aide SQL
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
@@ -1076,6 +1119,20 @@ export default function AdminPage() {
               {testingSupabase ? 'Test en cours...' : 'Tester la connexion Supabase'}
             </button>
           </div>
+
+          {overview?.storage_mode !== 'supabase' && (
+            <div className="glass-surface rounded-2xl p-6 space-y-3 border border-amber-500/25">
+              <h3 className="text-sm font-semibold text-white">
+                Activer Supabase PostgreSQL (SQL à exécuter dans Supabase → SQL Editor)
+              </h3>
+              <p className="text-xs text-zinc-400">
+                Si vos tables existent déjà et renvoient l’erreur <code className="text-amber-300">42501</code>, copiez et exécutez le fichier complet <code className="text-zinc-200">supabase/schema.sql</code> ou ce bloc de permissions dans votre éditeur SQL Supabase, puis cliquez sur « Tester la connexion Supabase » :
+              </p>
+              <pre className="p-3.5 rounded-xl bg-black/60 border border-white/10 text-[11px] font-mono text-zinc-200 overflow-x-auto select-all">{`GRANT USAGE ON SCHEMA public TO service_role;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO service_role;`}</pre>
+            </div>
+          )}
 
           <form onSubmit={handleSaveSettings} className="glass-surface rounded-2xl p-6 space-y-6">
             <h2 className="text-lg font-semibold text-white">Identité, Hero & Livraison</h2>

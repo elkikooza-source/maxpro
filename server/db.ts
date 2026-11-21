@@ -324,26 +324,26 @@ class StoreDatabase {
       return this.getStatus();
     }
 
-    const probe = await this.supabaseFetch<Array<{ id: string }>>('categories?select=id&limit=1');
-    if (!probe.ok) {
+    const [probeCat, probeProd, probeOrd, probeSettings] = await Promise.all([
+      this.supabaseFetch<Array<{ id: string }>>('categories?select=id&limit=1'),
+      this.supabaseFetch<Array<{ id: string }>>('products?select=id&limit=1'),
+      this.supabaseFetch<Array<{ id: string }>>('orders?select=id&limit=1'),
+      this.supabaseFetch<Array<{ key: string }>>('site_settings?select=key&limit=1'),
+    ]);
+
+    const failedProbe = [probeCat, probeProd, probeOrd, probeSettings].find((p) => !p.ok);
+    if (failedProbe) {
       this.activeMode = 'sqlite';
-      if (probe.status === 403 || probe.errorText.includes('42501')) {
+      if (failedProbe.status === 403 || failedProbe.errorText.includes('42501')) {
         this.supabaseError =
-          "Privilèges Supabase manquants (42501) : exécutez supabase/schema.sql dans l'éditeur SQL Supabase pour accorder les droits à service_role. Repli SQLite actif.";
+          "Privilèges Supabase manquants (42501) : exécutez supabase/schema.sql dans l'éditeur SQL Supabase pour accorder les droits à service_role.";
       } else {
-        this.supabaseError = `Connexion Supabase indisponible (${probe.status || 'réseau'}) — repli automatique sur SQLite.`;
+        this.supabaseError = `Tables ou connexion Supabase incomplètes (${failedProbe.status || 'réseau'}) — exécutez supabase/schema.sql.`;
       }
       return this.getStatus();
     }
 
-    // Also verify other required tables exist
-    const probeSettings = await this.supabaseFetch<Array<{ key: string }>>('site_settings?select=key&limit=1');
-    if (!probeSettings.ok) {
-      this.activeMode = 'sqlite';
-      this.supabaseError = `Tables Supabase incomplètes — exécutez supabase/schema.sql. Repli SQLite actif.`;
-      return this.getStatus();
-    }
-
+    const probe = probeCat;
     this.activeMode = 'supabase';
     this.supabaseError = '';
 
@@ -459,7 +459,10 @@ class StoreDatabase {
         headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
         body: JSON.stringify([{ key: 'global', value: merged, updated_at: new Date().toISOString() }]),
       });
-      if (res.ok) return merged;
+      if (!res.ok) {
+        throw new Error(`Erreur Supabase paramètres (${res.status}): ${res.errorText}`);
+      }
+      return merged;
     }
     this.sqlite
       .prepare(
@@ -529,7 +532,10 @@ class StoreDatabase {
           }),
         }
       );
-      if (res.ok && res.data?.[0]) return res.data[0];
+      if (!res.ok) {
+        throw new Error(`Erreur Supabase catégorie (${res.status}): ${res.errorText}`);
+      }
+      return res.data?.[0] || updated;
     }
 
     this.sqlite
@@ -622,9 +628,10 @@ class StoreDatabase {
         headers: { Prefer: 'return=representation' },
         body: JSON.stringify([product]),
       });
-      if (res.ok && res.data?.[0]) {
-        return this.mapSupabaseProduct(res.data[0]);
+      if (!res.ok) {
+        throw new Error(`Erreur Supabase création produit (${res.status}): ${res.errorText}`);
       }
+      return res.data?.[0] ? this.mapSupabaseProduct(res.data[0]) : product;
     }
 
     this.sqlite
@@ -701,9 +708,10 @@ class StoreDatabase {
           }),
         }
       );
-      if (res.ok && res.data?.[0]) {
-        return this.mapSupabaseProduct(res.data[0]);
+      if (!res.ok) {
+        throw new Error(`Erreur Supabase mise à jour produit (${res.status}): ${res.errorText}`);
       }
+      return res.data?.[0] ? this.mapSupabaseProduct(res.data[0]) : updated;
     }
 
     this.sqlite
@@ -745,7 +753,10 @@ class StoreDatabase {
       const res = await this.supabaseFetch(`products?id=eq.${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
-      if (res.ok) return true;
+      if (!res.ok) {
+        throw new Error(`Erreur Supabase suppression produit (${res.status}): ${res.errorText}`);
+      }
+      return true;
     }
     const info = this.sqlite.prepare('DELETE FROM products WHERE id = ?').run(id);
     return info.changes > 0;
@@ -854,24 +865,34 @@ class StoreDatabase {
         method: 'POST',
         body: JSON.stringify([order]),
       });
-      if (orderRes.ok) {
-        await this.supabaseFetch('order_items', {
-          method: 'POST',
-          body: JSON.stringify(orderItems),
-        });
-        for (const [prodId, qtyUsed] of requestedQtyByProduct.entries()) {
-          const prod = productMap.get(prodId)!;
-          await this.supabaseFetch(`products?id=eq.${encodeURIComponent(prodId)}`, {
-            method: 'PATCH',
-            body: JSON.stringify({
-              stock: Math.max(0, prod.stock - qtyUsed),
-              sales_count: (prod.sales_count || 0) + qtyUsed,
-              updated_at: now,
-            }),
-          });
-        }
-        return { order: { ...order, items: orderItems } };
+      if (!orderRes.ok) {
+        return {
+          error: `Erreur Supabase commande (${orderRes.status}): ${orderRes.errorText}`,
+          status: 502,
+        };
       }
+      const itemsRes = await this.supabaseFetch('order_items', {
+        method: 'POST',
+        body: JSON.stringify(orderItems),
+      });
+      if (!itemsRes.ok) {
+        return {
+          error: `Erreur Supabase articles (${itemsRes.status}): ${itemsRes.errorText}`,
+          status: 502,
+        };
+      }
+      for (const [prodId, qtyUsed] of requestedQtyByProduct.entries()) {
+        const prod = productMap.get(prodId)!;
+        await this.supabaseFetch(`products?id=eq.${encodeURIComponent(prodId)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            stock: Math.max(0, prod.stock - qtyUsed),
+            sales_count: (prod.sales_count || 0) + qtyUsed,
+            updated_at: now,
+          }),
+        });
+      }
+      return { order: { ...order, items: orderItems } };
     }
 
     // SQLite atomic transaction with conditional stock check
@@ -1097,9 +1118,10 @@ class StoreDatabase {
           body: JSON.stringify({ status, updated_at: now }),
         }
       );
-      if (res.ok && res.data?.[0]) {
-        return res.data[0];
+      if (!res.ok) {
+        throw new Error(`Erreur Supabase statut commande (${res.status}): ${res.errorText}`);
       }
+      return res.data?.[0] || null;
     }
     const info = this.sqlite
       .prepare('UPDATE orders SET status = ?, updated_at = ? WHERE id = ?')

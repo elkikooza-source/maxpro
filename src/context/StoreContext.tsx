@@ -19,7 +19,7 @@ interface StoreContextValue {
   categories: Category[];
   products: Product[];
   loading: boolean;
-  refreshStorefront: () => Promise<void>;
+  refreshStorefront: (bypassCache?: boolean) => Promise<void>;
   cart: CartItem[];
   cartOpen: boolean;
   setCartOpen: (open: boolean) => void;
@@ -98,9 +98,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setLangState((prev) => (prev === 'fr' ? 'ar' : 'fr'));
   }, []);
 
-  const refreshStorefront = useCallback(async () => {
+  const refreshStorefront = useCallback(async (bypassCache = true) => {
     try {
-      const res = await fetch('/api/storefront');
+      const res = await fetch('/api/storefront', bypassCache ? { cache: 'no-store' } : undefined);
       if (!res.ok) return;
       const data = await res.json();
       if (data.settings) setSettings(data.settings);
@@ -114,7 +114,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void refreshStorefront();
+    void refreshStorefront(false);
   }, [refreshStorefront]);
 
   const addToCart = useCallback(

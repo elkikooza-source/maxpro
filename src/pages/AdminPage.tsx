@@ -42,12 +42,37 @@ interface AuthStatus {
 }
 
 async function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
+  const rawDataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ''));
     reader.onerror = () => reject(new Error('Impossible de lire le fichier.'));
     reader.readAsDataURL(file);
   });
+
+  // Compress large photos cleanly to WebP (max 1400px) so product pages stay fast
+  if (file.size <= 140 * 1024) return rawDataUrl;
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error('Image decode failed'));
+      el.src = rawDataUrl;
+    });
+    const maxDim = 1400;
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return rawDataUrl;
+    ctx.drawImage(img, 0, 0, w, h);
+    const webp = canvas.toDataURL('image/webp', 0.82);
+    return webp.startsWith('data:image/webp') && webp.length < rawDataUrl.length ? webp : rawDataUrl;
+  } catch {
+    return rawDataUrl;
+  }
 }
 
 function formatCountdown(totalSeconds: number): string {

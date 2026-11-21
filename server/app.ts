@@ -82,6 +82,7 @@ export function createApiApp(): Express {
         storeDb.getCategories(true),
         storeDb.getProducts(false),
       ]);
+      res.setHeader('Cache-Control', 'public, max-age=20, stale-while-revalidate=60');
       res.json({ settings, categories, products });
     } catch (err) {
       console.error('Storefront error:', err);
@@ -145,6 +146,7 @@ export function createApiApp(): Express {
         products.sort((a, b) => Number(b.is_featured) - Number(a.is_featured));
       }
 
+      res.setHeader('Cache-Control', 'public, max-age=20, stale-while-revalidate=60');
       res.json({ products });
     } catch (err) {
       console.error('Products list error:', err);
@@ -168,6 +170,7 @@ export function createApiApp(): Express {
         );
         related.push(...extras.slice(0, 3 - related.length));
       }
+      res.setHeader('Cache-Control', 'public, max-age=20, stale-while-revalidate=60');
       return res.json({ product, related });
     } catch (err) {
       console.error('Product detail error:', err);

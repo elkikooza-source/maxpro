@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface SafeImageProps {
   src?: string;
@@ -9,6 +9,13 @@ interface SafeImageProps {
 
 export function SafeImage({ src, alt, className = '', eager = false }: SafeImageProps) {
   const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    setFailed(false);
+    setLoaded(Boolean(imgRef.current?.complete && imgRef.current?.naturalWidth > 0));
+  }, [src]);
 
   if (!src || failed) {
     return (
@@ -40,12 +47,16 @@ export function SafeImage({ src, alt, className = '', eager = false }: SafeImage
 
   return (
     <img
+      ref={imgRef}
       src={src}
       alt={alt}
       loading={eager ? 'eager' : 'lazy'}
+      decoding="async"
+      fetchPriority={eager ? 'high' : 'low'}
       referrerPolicy="no-referrer"
+      onLoad={() => setLoaded(true)}
       onError={() => setFailed(true)}
-      className={className}
+      className={`${className} bg-[#0c0e13] transition-opacity duration-150 ${loaded ? 'opacity-100' : 'opacity-50'}`}
     />
   );
 }

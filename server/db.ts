@@ -324,57 +324,114 @@ class StoreDatabase {
       return this.getStatus();
     }
 
-    const [probeCat, probeProd, probeOrd, probeSettings] = await Promise.all([
-      this.supabaseFetch<Array<{ id: string }>>('categories?select=id&limit=1'),
-      this.supabaseFetch<Array<{ id: string }>>('products?select=id&limit=1'),
-      this.supabaseFetch<Array<{ id: string }>>('orders?select=id&limit=1'),
-      this.supabaseFetch<Array<{ key: string }>>('site_settings?select=key&limit=1'),
+    const [
+      probeCat,
+      probeProd,
+      probeOrd,
+      probeItems,
+      probeSettings,
+      probeAuth,
+      probeAttempts,
+    ] = await Promise.all([
+      this.supabaseFetch<Array<{ id: string }>>(
+        'categories?select=id,slug,name_fr,name_ar,description_fr,description_ar,image_url,sort_order,is_active&limit=1'
+      ),
+      this.supabaseFetch<Array<{ id: string }>>(
+        'products?select=id,slug,category_slug,name_fr,name_ar,short_desc_fr,short_desc_ar,description_fr,description_ar,price,sale_price,stock,images,variations,is_visible,is_featured,is_bestseller,is_new_arrival,sales_count&limit=1'
+      ),
+      this.supabaseFetch<Array<{ id: string }>>(
+        'orders?select=id,order_number,customer_name,customer_phone,city,address,note,status,subtotal,shipping_fee,total,payment_method,language,created_at,updated_at&limit=1'
+      ),
+      this.supabaseFetch<Array<{ id: string }>>(
+        'order_items?select=id,order_id,product_id,product_slug,product_name_fr,product_name_ar,variation_label_fr,variation_label_ar,unit_price,quantity,line_total&limit=1'
+      ),
+      this.supabaseFetch<Array<{ key: string }>>('site_settings?select=key,value&limit=1'),
+      this.supabaseFetch<Array<{ id: string }>>(
+        'admin_auth?select=id,username,password_hash,password_salt&limit=1'
+      ),
+      this.supabaseFetch<Array<{ ip: string }>>(
+        'admin_login_attempts?select=ip,attempts,locked_until,last_attempt_at&limit=1'
+      ),
     ]);
 
-    const failedProbe = [probeCat, probeProd, probeOrd, probeSettings].find((p) => !p.ok);
+    const failedProbe = [
+      probeCat,
+      probeProd,
+      probeOrd,
+      probeItems,
+      probeSettings,
+      probeAuth,
+      probeAttempts,
+    ].find((p) => !p.ok);
+
     if (failedProbe) {
       this.activeMode = 'sqlite';
       if (failedProbe.status === 403 || failedProbe.errorText.includes('42501')) {
         this.supabaseError =
-          "Privilèges Supabase manquants (42501) : exécutez supabase/schema.sql dans l'éditeur SQL Supabase pour accorder les droits à service_role.";
+          "Privilèges Supabase manquants (42501) : exécutez le script SQL dans l'éditeur SQL Supabase pour accorder les droits à service_role.";
+      } else if (
+        failedProbe.errorText.includes('PGRST204') ||
+        failedProbe.errorText.includes('42703') ||
+        failedProbe.errorText.includes('PGRST205') ||
+        failedProbe.errorText.includes('42P01') ||
+        failedProbe.status === 400 ||
+        failedProbe.status === 404
+      ) {
+        this.supabaseError = `Colonnes ou tables Supabase incomplètes (${failedProbe.errorText}). Exécutez le script SQL complet (« Voir l’aide SQL ») dans Supabase SQL Editor.`;
       } else {
-        this.supabaseError = `Tables ou connexion Supabase incomplètes (${failedProbe.status || 'réseau'}) — exécutez supabase/schema.sql.`;
+        this.supabaseError = `Connexion Supabase incomplète (${failedProbe.status || 'réseau'}) : ${failedProbe.errorText}`;
       }
       return this.getStatus();
     }
 
-    const probe = probeCat;
-    this.activeMode = 'supabase';
-    this.supabaseError = '';
-
-    // Seed Supabase if empty
+    // Seed Supabase if empty and verify writes succeed (e.g. catch incompatible id column types like uuid/int8)
     try {
-      if (Array.isArray(probe.data) && probe.data.length === 0) {
-        await this.supabaseFetch('categories', {
+      if (Array.isArray(probeCat.data) && probeCat.data.length === 0) {
+        const catSeed = await this.supabaseFetch('categories', {
           method: 'POST',
           headers: { Prefer: 'resolution=ignore-duplicates' },
           body: JSON.stringify(SEED_CATEGORIES),
         });
+        if (!catSeed.ok) {
+          this.activeMode = 'sqlite';
+          this.supabaseError = `Structure de table Supabase incompatible (categories : ${catSeed.errorText}). Exécutez le script SQL de réinitialisation (« Voir l’aide SQL »).`;
+          return this.getStatus();
+        }
       }
-      const prodProbe = await this.supabaseFetch<Array<{ id: string }>>('products?select=id&limit=1');
-      if (prodProbe.ok && Array.isArray(prodProbe.data) && prodProbe.data.length === 0) {
-        await this.supabaseFetch('products', {
+
+      if (Array.isArray(probeProd.data) && probeProd.data.length === 0) {
+        const prodSeed = await this.supabaseFetch('products', {
           method: 'POST',
           headers: { Prefer: 'resolution=ignore-duplicates' },
           body: JSON.stringify(SEED_PRODUCTS),
         });
+        if (!prodSeed.ok) {
+          this.activeMode = 'sqlite';
+          this.supabaseError = `Structure de table Supabase incompatible (products : ${prodSeed.errorText}). Exécutez le script SQL de réinitialisation (« Voir l’aide SQL »).`;
+          return this.getStatus();
+        }
       }
+
       if (Array.isArray(probeSettings.data) && probeSettings.data.length === 0) {
-        await this.supabaseFetch('site_settings', {
+        const setSeed = await this.supabaseFetch('site_settings', {
           method: 'POST',
           headers: { Prefer: 'resolution=ignore-duplicates' },
           body: JSON.stringify([{ key: 'global', value: DEFAULT_SITE_SETTINGS }]),
         });
+        if (!setSeed.ok) {
+          this.activeMode = 'sqlite';
+          this.supabaseError = `Structure de table Supabase incompatible (site_settings : ${setSeed.errorText}). Exécutez le script SQL de réinitialisation (« Voir l’aide SQL »).`;
+          return this.getStatus();
+        }
       }
-    } catch {
-      // Non-fatal seeding guard
+    } catch (err) {
+      this.activeMode = 'sqlite';
+      this.supabaseError = `Erreur d'initialisation Supabase : ${err instanceof Error ? err.message : 'Erreur inconnue'}`;
+      return this.getStatus();
     }
 
+    this.activeMode = 'supabase';
+    this.supabaseError = '';
     return this.getStatus();
   }
 

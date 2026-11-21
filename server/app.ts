@@ -254,6 +254,54 @@ export function createApiApp(): Express {
   // -------------------------------------------------------------------------
   // Admin Authentication & Hardened IP Brute-Force Protection
   // -------------------------------------------------------------------------
+  const ADMIN_COOKIE_NAME = 'maxpro_admin_session';
+
+  const parseCookieValue = (cookieHeader: string | undefined, name: string): string | null => {
+    if (!cookieHeader) return null;
+    for (const part of cookieHeader.split(';')) {
+      const idx = part.indexOf('=');
+      if (idx === -1) continue;
+      const key = part.slice(0, idx).trim();
+      if (key === name) {
+        try {
+          return decodeURIComponent(part.slice(idx + 1).trim());
+        } catch {
+          return part.slice(idx + 1).trim();
+        }
+      }
+    }
+    return null;
+  };
+
+  const extractAdminToken = (req: Request): string | null => {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      const bearer = authHeader.slice(7).trim();
+      if (bearer) return bearer;
+    }
+    return parseCookieValue(req.headers.cookie, ADMIN_COOKIE_NAME);
+  };
+
+  const setAdminSessionCookie = (req: Request, res: Response, token: string, maxAgeSeconds = 12 * 60 * 60) => {
+    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+    const parts = [
+      `${ADMIN_COOKIE_NAME}=${encodeURIComponent(token)}`,
+      'Path=/',
+      `Max-Age=${maxAgeSeconds}`,
+      'HttpOnly',
+    ];
+    if (isHttps) {
+      parts.push('SameSite=None', 'Secure');
+    } else {
+      parts.push('SameSite=Lax');
+    }
+    res.setHeader('Set-Cookie', parts.join('; '));
+  };
+
+  const clearAdminSessionCookie = (req: Request, res: Response) => {
+    setAdminSessionCookie(req, res, '', 0);
+  };
+
   app.get('/api/admin/auth/status', async (req, res) => {
     const ip = getClientIp(req);
     const envPasscode = (process.env.ADMIN_PASSCODE || '').trim();
@@ -264,8 +312,7 @@ export function createApiApp(): Express {
       storeDb.getLoginAttemptStatus(ip),
     ]);
 
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+    const token = extractAdminToken(req);
     const authenticated = verifyAdminToken(token);
 
     res.json({
@@ -322,6 +369,7 @@ export function createApiApp(): Express {
 
     await storeDb.resetLoginAttempts(ip);
     const token = createAdminToken();
+    setAdminSessionCookie(req, res, token);
     return res.status(201).json({ token });
   });
 
@@ -375,12 +423,17 @@ export function createApiApp(): Express {
 
     await storeDb.resetLoginAttempts(ip);
     const token = createAdminToken();
+    setAdminSessionCookie(req, res, token);
     return res.json({ token });
   });
 
+  app.post('/api/admin/auth/logout', (req, res) => {
+    clearAdminSessionCookie(req, res);
+    return res.json({ ok: true });
+  });
+
   const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+    const token = extractAdminToken(req);
     if (!verifyAdminToken(token)) {
       return res.status(401).json({ error: 'Session administrateur expirée ou invalide.' });
     }

@@ -105,9 +105,10 @@ export default function AdminPage() {
       if (!headers.has('Content-Type') && init.body) {
         headers.set('Content-Type', 'application/json');
       }
-      const res = await fetch(url, { ...init, headers });
+      const res = await fetch(url, { ...init, headers, credentials: 'include' });
       if (res.status === 401) {
         setAdminToken(null);
+        setAuthStatus((prev) => (prev ? { ...prev, authenticated: false } : prev));
       }
       return res;
     },
@@ -117,7 +118,7 @@ export default function AdminPage() {
   const loadAuthStatus = useCallback(async () => {
     setStatusError('');
     try {
-      const res = await fetch('/api/admin/auth/status');
+      const res = await fetch('/api/admin/auth/status', { credentials: 'include' });
       if (res.ok) {
         const data = (await res.json()) as AuthStatus;
         setAuthStatus((prev) => ({
@@ -158,7 +159,7 @@ export default function AdminPage() {
   }, [authStatus?.locked, authStatus?.remainingSeconds, loadAuthStatus]);
 
   const loadAdminData = useCallback(async () => {
-    if (!adminToken) return;
+    if (!adminToken && !authStatus?.authenticated) return;
     setDataLoading(true);
     try {
       const [ovRes, prRes, orRes, caRes, seRes] = await Promise.all([
@@ -176,10 +177,10 @@ export default function AdminPage() {
     } finally {
       setDataLoading(false);
     }
-  }, [adminToken, authFetch]);
+  }, [adminToken, authStatus?.authenticated, authFetch]);
 
   useEffect(() => {
-    if (adminToken && authStatus?.authenticated) {
+    if (authStatus?.authenticated || adminToken) {
       void loadAdminData();
     }
   }, [adminToken, authStatus?.authenticated, loadAdminData]);
@@ -200,6 +201,7 @@ export default function AdminPage() {
       let res = await fetch('/api/admin/auth/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ username: username.trim(), password }),
       });
 
@@ -208,6 +210,7 @@ export default function AdminPage() {
         res = await fetch('/api/admin/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ username: username.trim(), password }),
         });
       }
@@ -252,6 +255,7 @@ export default function AdminPage() {
       const res = await fetch('/api/admin/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ username: username.trim(), password }),
       });
       const data = await res.json();
@@ -284,6 +288,16 @@ export default function AdminPage() {
     } finally {
       setAuthSubmitting(false);
     }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/admin/auth/logout', { method: 'POST', credentials: 'include' });
+    } catch {
+      // Clear local state regardless
+    }
+    setAdminToken(null);
+    setAuthStatus((prev) => (prev ? { ...prev, authenticated: false } : prev));
   };
 
   const uploadImageFile = async (file: File): Promise<string | null> => {
@@ -434,8 +448,106 @@ export default function AdminPage() {
     }
   };
 
-  const supabaseFixSql = `ALTER TABLE public.admin_auth
-  ADD COLUMN IF NOT EXISTS username TEXT NOT NULL DEFAULT 'admin';
+  const supabaseFixSql = `DROP TABLE IF EXISTS public.order_items, public.orders, public.products, public.categories, public.site_settings, public.admin_auth, public.admin_login_attempts CASCADE;
+
+CREATE TABLE public.categories (
+  id TEXT PRIMARY KEY,
+  slug TEXT UNIQUE NOT NULL,
+  name_fr TEXT NOT NULL,
+  name_ar TEXT NOT NULL,
+  description_fr TEXT DEFAULT '',
+  description_ar TEXT DEFAULT '',
+  image_url TEXT DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE public.products (
+  id TEXT PRIMARY KEY,
+  slug TEXT UNIQUE NOT NULL,
+  category_slug TEXT NOT NULL REFERENCES public.categories(slug) ON UPDATE CASCADE,
+  name_fr TEXT NOT NULL,
+  name_ar TEXT NOT NULL,
+  short_desc_fr TEXT DEFAULT '',
+  short_desc_ar TEXT DEFAULT '',
+  description_fr TEXT DEFAULT '',
+  description_ar TEXT DEFAULT '',
+  price NUMERIC(10, 2) NOT NULL CHECK (price >= 0),
+  sale_price NUMERIC(10, 2) NULL CHECK (sale_price IS NULL OR sale_price >= 0),
+  stock INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
+  images JSONB NOT NULL DEFAULT '[]'::jsonb,
+  variations JSONB NOT NULL DEFAULT '[]'::jsonb,
+  is_visible BOOLEAN NOT NULL DEFAULT TRUE,
+  is_featured BOOLEAN NOT NULL DEFAULT FALSE,
+  is_bestseller BOOLEAN NOT NULL DEFAULT FALSE,
+  is_new_arrival BOOLEAN NOT NULL DEFAULT FALSE,
+  sales_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE public.orders (
+  id TEXT PRIMARY KEY,
+  order_number TEXT UNIQUE NOT NULL,
+  customer_name TEXT NOT NULL,
+  customer_phone TEXT NOT NULL,
+  city TEXT NOT NULL,
+  address TEXT NOT NULL,
+  note TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'En attente',
+  subtotal NUMERIC(10, 2) NOT NULL CHECK (subtotal >= 0),
+  shipping_fee NUMERIC(10, 2) NOT NULL DEFAULT 0 CHECK (shipping_fee >= 0),
+  total NUMERIC(10, 2) NOT NULL CHECK (total >= 0),
+  payment_method TEXT NOT NULL DEFAULT 'COD',
+  language TEXT NOT NULL DEFAULT 'fr',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE public.order_items (
+  id TEXT PRIMARY KEY,
+  order_id TEXT NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+  product_id TEXT NOT NULL,
+  product_slug TEXT NOT NULL,
+  product_name_fr TEXT NOT NULL,
+  product_name_ar TEXT NOT NULL,
+  variation_label_fr TEXT DEFAULT '',
+  variation_label_ar TEXT DEFAULT '',
+  unit_price NUMERIC(10, 2) NOT NULL CHECK (unit_price >= 0),
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  line_total NUMERIC(10, 2) NOT NULL CHECK (line_total >= 0)
+);
+
+CREATE TABLE public.site_settings (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE public.admin_auth (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL DEFAULT 'admin',
+  password_hash TEXT NOT NULL,
+  password_salt TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE public.admin_login_attempts (
+  ip TEXT PRIMARY KEY,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  locked_until TIMESTAMPTZ NULL,
+  last_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.site_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_auth ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_login_attempts ENABLE ROW LEVEL SECURITY;
 
 GRANT USAGE ON SCHEMA public TO service_role;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
@@ -451,7 +563,9 @@ BEGIN
     EXECUTE format('DROP POLICY IF EXISTS "service_role_full_access" ON public.%I;', tbl);
     EXECUTE format('CREATE POLICY "service_role_full_access" ON public.%I FOR ALL TO service_role USING (true) WITH CHECK (true);', tbl);
   END LOOP;
-END $$;`;
+END $$;
+
+NOTIFY pgrst, 'reload schema';`;
 
   const handleCopySql = async () => {
     try {
@@ -514,7 +628,7 @@ END $$;`;
   }
 
   // Hardened Lock Screen / Setup / Login Gate
-  if (!adminToken || !authStatus?.authenticated) {
+  if (!authStatus?.authenticated && !adminToken) {
     return (
       <div className="min-h-screen pt-36 pb-20 px-4 flex items-center justify-center">
         <div className="w-full max-w-md glass-panel rounded-3xl p-6 sm:p-8 space-y-6">
@@ -697,7 +811,7 @@ END $$;`;
 
           <button
             type="button"
-            onClick={() => setAdminToken(null)}
+            onClick={() => void handleLogout()}
             className="min-h-[40px] px-3.5 rounded-xl border border-white/10 text-xs font-medium text-zinc-300 hover:text-white hover:bg-white/[0.06] inline-flex items-center gap-2 cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { CheckCircle2, MessageCircle } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { formatTnd, ORDER_STATUS_LABELS } from '../i18n/translations';
+import { formatTnd, ORDER_STATUS_LABELS, ORDER_STATUS_STYLES } from '../i18n/translations';
 import type { Order } from '../types/store';
 
 export default function OrderConfirmationPage() {
@@ -103,7 +103,18 @@ export default function OrderConfirmationPage() {
               <span className="text-xs uppercase tracking-wider text-zinc-400 block">
                 {t.order.status}
               </span>
-              <p className="text-white font-medium mt-0.5">{statusLabel}</p>
+              <span
+                className={`mt-1.5 inline-flex items-center gap-2 px-2.5 py-1 rounded-lg border text-xs font-medium ${
+                  ORDER_STATUS_STYLES[order.status]?.badge || 'bg-white/10 text-white border-white/20'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    ORDER_STATUS_STYLES[order.status]?.dot || 'bg-white'
+                  }`}
+                />
+                {statusLabel}
+              </span>
             </div>
             <div>
               <span className="text-xs uppercase tracking-wider text-zinc-400 block">

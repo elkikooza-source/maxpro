@@ -618,6 +618,37 @@ export function createApiApp(): Express {
     }
   });
 
+  app.delete('/api/admin/orders/:id', requireAdmin, async (req, res) => {
+    try {
+      const deleted = await storeDb.deleteOrders([req.params.id]);
+      if (deleted === 0) return res.status(404).json({ error: 'Commande introuvable.' });
+      return res.json({ ok: true, deleted });
+    } catch (err) {
+      console.error('Delete order error:', err);
+      const message = err instanceof Error ? err.message : 'Impossible de supprimer la commande.';
+      return res.status(500).json({ error: message });
+    }
+  });
+
+  app.post('/api/admin/orders/bulk-delete', requireAdmin, async (req, res) => {
+    try {
+      const rawIds = req.body?.ids;
+      if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > 200) {
+        return res.status(400).json({ error: 'Sélection de commandes invalide (1 à 200).' });
+      }
+      const ids = rawIds.map((id: unknown) => String(id || '').trim()).filter(Boolean);
+      if (ids.length === 0) {
+        return res.status(400).json({ error: 'Aucune commande valide sélectionnée.' });
+      }
+      const deleted = await storeDb.deleteOrders(ids);
+      return res.json({ ok: true, deleted });
+    } catch (err) {
+      console.error('Bulk delete orders error:', err);
+      const message = err instanceof Error ? err.message : 'Impossible de supprimer les commandes.';
+      return res.status(500).json({ error: message });
+    }
+  });
+
   app.get('/api/admin/categories', requireAdmin, async (_req, res) => {
     try {
       const categories = await storeDb.getCategories(false);

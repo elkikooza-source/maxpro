@@ -17,7 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { formatTnd } from '../i18n/translations';
+import { formatTnd, ORDER_STATUS_STYLES } from '../i18n/translations';
 import {
   ORDER_STATUSES,
   type AdminOverviewStats,
@@ -88,6 +88,10 @@ export default function AdminPage() {
   const [orderSearch, setOrderSearch] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState<'all' | OrderStatus>('all');
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+  const [confirmBulkDeleteOrders, setConfirmBulkDeleteOrders] = useState(false);
+  const [deletingOrders, setDeletingOrders] = useState(false);
 
   const [savingSettings, setSavingSettings] = useState(false);
   const [testingSupabase, setTestingSupabase] = useState(false);
@@ -410,6 +414,54 @@ export default function AdminPage() {
     } else {
       const json = await res.json().catch(() => ({}));
       showToast('err', json?.error || 'Impossible de modifier le statut.');
+    }
+  };
+
+  const toggleOrderSelection = (orderId: string) => {
+    setConfirmBulkDeleteOrders(false);
+    setSelectedOrderIds((prev) =>
+      prev.includes(orderId) ? prev.filter((id) => id !== orderId) : [...prev, orderId]
+    );
+  };
+
+  const handleDeleteSingleOrder = async (orderId: string) => {
+    setDeletingOrders(true);
+    try {
+      const res = await authFetch(`/api/admin/orders/${orderId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setDeletingOrderId(null);
+        setSelectedOrderIds((prev) => prev.filter((id) => id !== orderId));
+        showToast('ok', 'Commande supprimée.');
+        await loadAdminData();
+      } else {
+        const json = await res.json().catch(() => ({}));
+        showToast('err', json?.error || 'Impossible de supprimer la commande.');
+      }
+    } finally {
+      setDeletingOrders(false);
+    }
+  };
+
+  const handleBulkDeleteOrders = async () => {
+    if (selectedOrderIds.length === 0) return;
+    setDeletingOrders(true);
+    try {
+      const res = await authFetch('/api/admin/orders/bulk-delete', {
+        method: 'POST',
+        body: JSON.stringify({ ids: selectedOrderIds }),
+      });
+      if (res.ok) {
+        const count = selectedOrderIds.length;
+        setSelectedOrderIds([]);
+        setConfirmBulkDeleteOrders(false);
+        showToast('ok', `${count} commande(s) supprimée(s).`);
+        await loadAdminData();
+      } else {
+        const json = await res.json().catch(() => ({}));
+        showToast('err', json?.error || 'Impossible de supprimer les commandes.');
+      }
+    } finally {
+      setDeletingOrders(false);
     }
   };
 
@@ -912,17 +964,23 @@ NOTIFY pgrst, 'reload schema';`;
                 Répartition des commandes ({overview.orders_total})
               </h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {ORDER_STATUSES.map((status) => (
-                  <div
-                    key={status}
-                    className="p-3.5 rounded-xl bg-black/35 border border-white/[0.06] space-y-1"
-                  >
-                    <span className="text-xs text-zinc-400 block">{status}</span>
-                    <span className="text-xl font-semibold text-white tabular-nums">
-                      {overview.orders_by_status[status] || 0}
-                    </span>
-                  </div>
-                ))}
+                {ORDER_STATUSES.map((status) => {
+                  const style = ORDER_STATUS_STYLES[status];
+                  return (
+                    <div
+                      key={status}
+                      className={`p-3.5 rounded-xl bg-black/35 border ${style.cardBorder} space-y-1`}
+                    >
+                      <span className={`text-xs font-medium inline-flex items-center gap-1.5 ${style.text}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+                        {status}
+                      </span>
+                      <span className="text-xl font-semibold text-white tabular-nums block">
+                        {overview.orders_by_status[status] || 0}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -1133,22 +1191,106 @@ NOTIFY pgrst, 'reload schema';`;
               >
                 Toutes
               </button>
-              {ORDER_STATUSES.map((st) => (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() => setOrderStatusFilter(st)}
-                  className={`min-h-[36px] px-3 rounded-lg text-xs font-medium whitespace-nowrap cursor-pointer ${
-                    orderStatusFilter === st
-                      ? 'bg-white text-zinc-950'
-                      : 'bg-white/[0.05] text-zinc-300'
-                  }`}
-                >
-                  {st}
-                </button>
-              ))}
+              {ORDER_STATUSES.map((st) => {
+                const style = ORDER_STATUS_STYLES[st];
+                const isActive = orderStatusFilter === st;
+                return (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setOrderStatusFilter(st)}
+                    className={`min-h-[36px] px-3 rounded-lg text-xs font-medium whitespace-nowrap inline-flex items-center gap-1.5 border transition-colors cursor-pointer ${
+                      isActive
+                        ? style.badge
+                        : 'bg-white/[0.04] border-white/[0.08] text-zinc-300 hover:text-white'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+                    <span>{st}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
+
+          {filteredOrders.length > 0 && (
+            <div className="glass-surface rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+              <label className="inline-flex items-center gap-2.5 text-xs sm:text-sm text-zinc-200 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={
+                    filteredOrders.length > 0 &&
+                    filteredOrders.every((o) => selectedOrderIds.includes(o.id))
+                  }
+                  onChange={(e) => {
+                    setConfirmBulkDeleteOrders(false);
+                    if (e.target.checked) {
+                      setSelectedOrderIds(filteredOrders.map((o) => o.id));
+                    } else {
+                      setSelectedOrderIds([]);
+                    }
+                  }}
+                  className="w-4 h-4 rounded border-white/25 bg-black/50 accent-white cursor-pointer"
+                />
+                <span>
+                  Tout sélectionner ({filteredOrders.length})
+                </span>
+                {selectedOrderIds.length > 0 && (
+                  <span className="text-xs text-zinc-400 tabular-nums">
+                    · {selectedOrderIds.length} sélectionnée(s)
+                  </span>
+                )}
+              </label>
+
+              {selectedOrderIds.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {confirmBulkDeleteOrders ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={deletingOrders}
+                        onClick={() => void handleBulkDeleteOrders()}
+                        className="min-h-[34px] px-3.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>
+                          {deletingOrders
+                            ? 'Suppression...'
+                            : `Confirmer la suppression (${selectedOrderIds.length})`}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deletingOrders}
+                        onClick={() => setConfirmBulkDeleteOrders(false)}
+                        className="min-h-[34px] px-3 rounded-lg border border-white/15 text-xs text-zinc-300 hover:text-white cursor-pointer"
+                      >
+                        Annuler
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmBulkDeleteOrders(true)}
+                        className="min-h-[34px] px-3.5 rounded-lg bg-red-500/15 border border-red-500/35 text-red-300 hover:bg-red-500/25 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Supprimer la sélection ({selectedOrderIds.length})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedOrderIds([])}
+                        className="min-h-[34px] px-3 rounded-lg border border-white/10 text-xs text-zinc-400 hover:text-white cursor-pointer"
+                      >
+                        Désélectionner
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {filteredOrders.length === 0 ? (
             <div className="glass-surface rounded-2xl p-10 text-center text-sm text-zinc-400">
@@ -1158,26 +1300,48 @@ NOTIFY pgrst, 'reload schema';`;
             <div className="space-y-3">
               {filteredOrders.map((ord) => {
                 const expanded = expandedOrderId === ord.id;
+                const isSelected = selectedOrderIds.includes(ord.id);
+                const statusStyle = ORDER_STATUS_STYLES[ord.status];
                 return (
-                  <div key={ord.id} className="glass-surface rounded-2xl p-5 space-y-4">
+                  <div
+                    key={ord.id}
+                    className={`glass-surface rounded-2xl p-5 space-y-4 transition-colors ${
+                      isSelected ? 'border-white/35 bg-white/[0.04]' : ''
+                    }`}
+                  >
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-3">
-                          <span dir="ltr" className="font-mono text-sm font-semibold text-white">
-                            {ord.order_number}
-                          </span>
-                          <span className="text-xs text-zinc-500">
-                            {new Date(ord.created_at).toLocaleString('fr-FR')}
-                          </span>
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleOrderSelection(ord.id)}
+                          aria-label={`Sélectionner ${ord.order_number}`}
+                          className="mt-1 w-4 h-4 rounded border-white/25 bg-black/50 accent-white shrink-0 cursor-pointer"
+                        />
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2.5">
+                            <span dir="ltr" className="font-mono text-sm font-semibold text-white">
+                              {ord.order_number}
+                            </span>
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md border text-[11px] font-medium ${statusStyle.badge}`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
+                              {ord.status}
+                            </span>
+                            <span className="text-xs text-zinc-500">
+                              {new Date(ord.created_at).toLocaleString('fr-FR')}
+                            </span>
+                          </div>
+                          <p className="text-sm text-zinc-200">
+                            {ord.customer_name} · <span dir="ltr">{ord.customer_phone}</span> ·{' '}
+                            {ord.city}
+                          </p>
                         </div>
-                        <p className="text-sm text-zinc-200">
-                          {ord.customer_name} · <span dir="ltr">{ord.customer_phone}</span> ·{' '}
-                          {ord.city}
-                        </p>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-3">
-                        <span className="text-base font-semibold text-white tabular-nums">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <span className="text-base font-semibold text-white tabular-nums me-1">
                           {formatTnd(ord.total, lang)}
                         </span>
 
@@ -1186,10 +1350,10 @@ NOTIFY pgrst, 'reload schema';`;
                           onChange={(e) =>
                             void handleOrderStatusChange(ord.id, e.target.value as OrderStatus)
                           }
-                          className="min-h-[38px] px-3 rounded-xl bg-black/50 border border-white/15 text-xs text-white cursor-pointer"
+                          className={`min-h-[38px] px-3 rounded-xl border text-xs font-medium cursor-pointer focus:outline-none ${statusStyle.select}`}
                         >
                           {ORDER_STATUSES.map((st) => (
-                            <option key={st} value={st}>
+                            <option key={st} value={st} className="bg-zinc-950 text-white">
                               {st}
                             </option>
                           ))}
@@ -1202,6 +1366,26 @@ NOTIFY pgrst, 'reload schema';`;
                         >
                           {expanded ? 'Masquer' : 'Détails'}
                         </button>
+
+                        {deletingOrderId === ord.id ? (
+                          <button
+                            type="button"
+                            disabled={deletingOrders}
+                            onClick={() => void handleDeleteSingleOrder(ord.id)}
+                            className="min-h-[38px] px-3 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-semibold cursor-pointer"
+                          >
+                            Confirmer
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setDeletingOrderId(ord.id)}
+                            aria-label="Supprimer la commande"
+                            className="min-h-[38px] min-w-[38px] rounded-xl border border-white/10 text-zinc-400 hover:text-red-400 hover:border-red-500/30 flex items-center justify-center cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
 

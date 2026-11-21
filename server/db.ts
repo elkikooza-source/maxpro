@@ -1207,6 +1207,50 @@ class StoreDatabase {
     };
   }
 
+  public async deleteOrders(ids: string[]): Promise<number> {
+    const cleanIds = Array.from(
+      new Set(
+        ids
+          .map((id) => String(id || '').trim())
+          .filter((id) => /^[a-zA-Z0-9_-]{3,80}$/.test(id))
+      )
+    );
+    if (cleanIds.length === 0) return 0;
+
+    if (this.activeMode === 'supabase') {
+      const inList = `(${cleanIds.map((id) => encodeURIComponent(id)).join(',')})`;
+      const itemsRes = await this.supabaseFetch(`order_items?order_id=in.${inList}`, {
+        method: 'DELETE',
+      });
+      if (!itemsRes.ok) {
+        throw new Error(`Erreur Supabase suppression articles (${itemsRes.status}): ${itemsRes.errorText}`);
+      }
+      const ordersRes = await this.supabaseFetch<Array<{ id: string }>>(
+        `orders?id=in.${inList}`,
+        {
+          method: 'DELETE',
+          headers: { Prefer: 'return=representation' },
+        }
+      );
+      if (!ordersRes.ok) {
+        throw new Error(`Erreur Supabase suppression commandes (${ordersRes.status}): ${ordersRes.errorText}`);
+      }
+      return Array.isArray(ordersRes.data) ? ordersRes.data.length : cleanIds.length;
+    }
+
+    const tx = this.sqlite.transaction((targetIds: string[]) => {
+      const placeholders = targetIds.map(() => '?').join(',');
+      this.sqlite
+        .prepare(`DELETE FROM order_items WHERE order_id IN (${placeholders})`)
+        .run(...targetIds);
+      const info = this.sqlite
+        .prepare(`DELETE FROM orders WHERE id IN (${placeholders})`)
+        .run(...targetIds);
+      return info.changes;
+    });
+    return tx(cleanIds);
+  }
+
   public async getAdminOverview(): Promise<AdminOverviewStats> {
     const orders = await this.getOrders();
     const products = await this.getProducts(true);

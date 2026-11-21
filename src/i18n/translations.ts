@@ -294,6 +294,60 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, { fr: string; ar: string }
   Annulée: { fr: 'Annulée', ar: 'ملغى' },
 };
 
+export const ORDER_STATUS_STYLES: Record<
+  OrderStatus,
+  {
+    badge: string;
+    dot: string;
+    select: string;
+    cardBorder: string;
+    text: string;
+  }
+> = {
+  'En attente': {
+    badge: 'bg-amber-500/15 text-amber-300 border-amber-500/35',
+    dot: 'bg-amber-400',
+    select: 'bg-amber-500/10 border-amber-500/40 text-amber-200',
+    cardBorder: 'border-amber-500/25',
+    text: 'text-amber-300',
+  },
+  Confirmée: {
+    badge: 'bg-sky-500/15 text-sky-300 border-sky-500/35',
+    dot: 'bg-sky-400',
+    select: 'bg-sky-500/10 border-sky-500/40 text-sky-200',
+    cardBorder: 'border-sky-500/25',
+    text: 'text-sky-300',
+  },
+  'En préparation': {
+    badge: 'bg-violet-500/15 text-violet-300 border-violet-500/35',
+    dot: 'bg-violet-400',
+    select: 'bg-violet-500/10 border-violet-500/40 text-violet-200',
+    cardBorder: 'border-violet-500/25',
+    text: 'text-violet-300',
+  },
+  Expédiée: {
+    badge: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/35',
+    dot: 'bg-cyan-400',
+    select: 'bg-cyan-500/10 border-cyan-500/40 text-cyan-200',
+    cardBorder: 'border-cyan-500/25',
+    text: 'text-cyan-300',
+  },
+  Livrée: {
+    badge: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/35',
+    dot: 'bg-emerald-400',
+    select: 'bg-emerald-500/10 border-emerald-500/40 text-emerald-200',
+    cardBorder: 'border-emerald-500/25',
+    text: 'text-emerald-300',
+  },
+  Annulée: {
+    badge: 'bg-red-500/15 text-red-300 border-red-500/35',
+    dot: 'bg-red-400',
+    select: 'bg-red-500/10 border-red-500/40 text-red-200',
+    cardBorder: 'border-red-500/25',
+    text: 'text-red-300',
+  },
+};
+
 export function formatTnd(amount: number, lang: Language): string {
   const formatted = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
   return lang === 'ar' ? `${formatted} د.ت` : `${formatted} TND`;

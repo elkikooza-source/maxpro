@@ -63,11 +63,13 @@ class StoreDatabase {
   private uploadsDir: string;
 
   constructor() {
-    const dataDir = path.resolve(process.cwd(), 'data');
+    const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    const writableRoot = isServerless ? '/tmp/maxpro' : process.cwd();
+    const dataDir = path.resolve(writableRoot, 'data');
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
-    this.uploadsDir = path.resolve(process.cwd(), 'uploads');
+    this.uploadsDir = path.resolve(writableRoot, 'uploads');
     if (!fs.existsSync(this.uploadsDir)) {
       fs.mkdirSync(this.uploadsDir, { recursive: true });
     }

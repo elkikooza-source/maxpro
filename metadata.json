@@ -1,0 +1,6 @@
+{
+  "name": "maxPro — Accessoires Auto de Luxe",
+  "description": "Boutique en ligne d'accessoires automobiles haut de gamme en Tunisie : parfums d'habitacle, tapis sur mesure, protection et entretien.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

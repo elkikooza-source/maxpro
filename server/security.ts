@@ -2,13 +2,24 @@ import crypto from 'crypto';
 import path from 'path';
 import type { Request } from 'express';
 
-// Ephemeral fallback secret per server boot when SESSION_SECRET isn't configured in env.
+// Ephemeral fallback secret per server boot when no server env secrets are configured.
 // Keeps signing key strictly in memory and never hardcoded.
 const IN_MEMORY_SESSION_SECRET = crypto.randomBytes(32).toString('hex');
 
 function getSessionSecret(): string {
   const envSecret = process.env.SESSION_SECRET?.trim();
-  return envSecret && envSecret.length >= 16 ? envSecret : IN_MEMORY_SESSION_SECRET;
+  if (envSecret && envSecret.length >= 16) return envSecret;
+
+  const seedSecret =
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || process.env.ADMIN_PASSCODE?.trim();
+  if (seedSecret) {
+    return crypto
+      .createHmac('sha256', seedSecret)
+      .update('maxpro-admin-session-v1')
+      .digest('hex');
+  }
+
+  return IN_MEMORY_SESSION_SECRET;
 }
 
 export function hashPassword(password: string, salt?: string): { hash: string; salt: string } {

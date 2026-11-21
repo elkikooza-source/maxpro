@@ -63,7 +63,6 @@ export default function AdminPage() {
   const [statusError, setStatusError] = useState('');
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
@@ -116,14 +115,14 @@ export default function AdminPage() {
   const loadAuthStatus = useCallback(async () => {
     setStatusError('');
     try {
-      const headers: HeadersInit = adminToken ? { Authorization: `Bearer ${adminToken}` } : {};
-      const res = await fetch('/api/admin/auth/status', { headers });
+      const res = await fetch('/api/admin/auth/status');
       if (res.ok) {
         const data = (await res.json()) as AuthStatus;
-        setAuthStatus(data);
-        if (!data.authenticated && adminToken) {
-          setAdminToken(null);
-        }
+        setAuthStatus((prev) => ({
+          ...data,
+          authenticated: Boolean(adminToken) || data.authenticated,
+          needsSetup: prev?.needsSetup === false ? false : data.needsSetup,
+        }));
       } else {
         setStatusError('Impossible de vérifier le statut de connexion administrateur.');
       }
@@ -132,7 +131,8 @@ export default function AdminPage() {
     } finally {
       setAuthLoading(false);
     }
-  }, [adminToken, setAdminToken]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     void loadAuthStatus();
@@ -193,27 +193,48 @@ export default function AdminPage() {
       setAuthError('Le mot de passe doit contenir au moins 6 caractères.');
       return;
     }
-    if (password !== confirmPassword) {
-      setAuthError('Les deux mots de passe ne correspondent pas.');
-      return;
-    }
     setAuthSubmitting(true);
     try {
-      const res = await fetch('/api/admin/auth/setup', {
+      let res = await fetch('/api/admin/auth/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: username.trim(), password }),
       });
+
+      // If already configured (e.g. claimed concurrently or in DB), automatically attempt login
+      if (res.status === 409) {
+        res = await fetch('/api/admin/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: username.trim(), password }),
+        });
+      }
+
       const data = await res.json();
       if (!res.ok) {
         setAuthError(data?.error || 'Impossible d’activer le compte.');
-        await loadAuthStatus();
+        setAuthStatus((prev) =>
+          prev
+            ? {
+                ...prev,
+                locked: Boolean(data.locked),
+                remainingSeconds: Number(data.remainingSeconds || 0),
+                attemptsRemaining: Number(data.attemptsRemaining ?? prev.attemptsRemaining),
+              }
+            : prev
+        );
         return;
       }
       setAdminToken(data.token);
       setPassword('');
-      setConfirmPassword('');
-      setAuthStatus((prev) => (prev ? { ...prev, needsSetup: false, authenticated: true } : prev));
+      setAuthStatus({
+        needsSetup: false,
+        envManaged: false,
+        authenticated: true,
+        locked: false,
+        remainingSeconds: 0,
+        attemptsRemaining: 3,
+      });
     } catch {
       setAuthError('Erreur réseau.');
     } finally {
@@ -248,7 +269,14 @@ export default function AdminPage() {
       }
       setAdminToken(data.token);
       setPassword('');
-      setAuthStatus((prev) => (prev ? { ...prev, authenticated: true } : prev));
+      setAuthStatus({
+        needsSetup: false,
+        envManaged: Boolean(authStatus?.envManaged),
+        authenticated: true,
+        locked: false,
+        remainingSeconds: 0,
+        attemptsRemaining: 3,
+      });
     } catch {
       setAuthError('Erreur réseau.');
     } finally {
@@ -522,27 +550,12 @@ export default function AdminPage() {
                 />
               </label>
 
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-zinc-300">
-                  {t.admin.confirmPasswordLabel}
-                </span>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/45 border border-white/10 text-sm text-white focus:outline-none focus:border-white/35"
-                />
-              </label>
-
               <button
                 type="submit"
                 disabled={authSubmitting}
                 className="w-full min-h-[46px] rounded-xl bg-white text-zinc-950 hover:bg-zinc-200 font-semibold text-sm transition-colors cursor-pointer"
               >
-                {authSubmitting ? '...' : t.admin.createPasswordBtn}
+                {authSubmitting ? '...' : t.admin.loginBtn}
               </button>
             </form>
           ) : (

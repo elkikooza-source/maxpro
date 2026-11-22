@@ -60,12 +60,13 @@ export function createApiApp(): Express {
     }
   });
 
-  // Serve locally uploaded images with path confinement
+  // Serve locally uploaded images with path confinement and strict sandbox CSP
   app.get('/uploads/:filename', (req, res) => {
     const confined = resolveConfinedPath(storeDb.getUploadsDir(), req.params.filename);
     if (!confined || !fs.existsSync(confined)) {
       return res.status(404).json({ error: 'Fichier introuvable.' });
     }
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     return res.sendFile(confined);
   });
@@ -255,7 +256,7 @@ export function createApiApp(): Express {
   });
 
   // -------------------------------------------------------------------------
-  // Admin Authentication & Hardened IP Brute-Force Protection
+  // Admin Authentication (HttpOnly Cookie + CSRF + Scoped Backoff)
   // -------------------------------------------------------------------------
   const ADMIN_COOKIE_NAME = 'maxpro_admin_session';
 
@@ -277,24 +278,22 @@ export function createApiApp(): Express {
   };
 
   const extractAdminToken = (req: Request): string | null => {
-    const authHeader = req.headers.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-      const bearer = authHeader.slice(7).trim();
-      if (bearer) return bearer;
-    }
     return parseCookieValue(req.headers.cookie, ADMIN_COOKIE_NAME);
   };
 
   const setAdminSessionCookie = (req: Request, res: Response, token: string, maxAgeSeconds = 12 * 60 * 60) => {
     const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+    const isCrossSiteIframe = req.headers['sec-fetch-site'] === 'cross-site';
     const parts = [
       `${ADMIN_COOKIE_NAME}=${encodeURIComponent(token)}`,
       'Path=/',
       `Max-Age=${maxAgeSeconds}`,
       'HttpOnly',
     ];
-    if (isHttps) {
-      parts.push('SameSite=None', 'Secure');
+    if (isHttps && isCrossSiteIframe) {
+      parts.push('SameSite=None', 'Secure', 'Partitioned');
+    } else if (isHttps) {
+      parts.push('SameSite=Lax', 'Secure');
     } else {
       parts.push('SameSite=Lax');
     }
@@ -305,35 +304,45 @@ export function createApiApp(): Express {
     setAdminSessionCookie(req, res, '', 0);
   };
 
+  const requireAdminCsrf = (req: Request, res: Response, next: NextFunction) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+      return next();
+    }
+    if (req.headers['x-requested-with'] !== 'maxpro-admin') {
+      return res.status(403).json({ error: 'En-tête CSRF requis manquant.' });
+    }
+    return next();
+  };
+
+  app.use('/api/admin', requireAdminCsrf);
+
   app.get('/api/admin/auth/status', async (req, res) => {
-    const ip = getClientIp(req);
     const envPasscode = (process.env.ADMIN_PASSCODE || '').trim();
+    const envUsername = (process.env.ADMIN_USERNAME || 'admin').trim() || 'admin';
     const envManaged = envPasscode.length > 0;
+    const requiresSetupKey = (process.env.ADMIN_SETUP_KEY || '').trim().length > 0;
 
-    const [authRec, attemptStatus] = await Promise.all([
-      envManaged ? Promise.resolve(null) : storeDb.getAdminAuthRecord(),
-      storeDb.getLoginAttemptStatus(ip),
-    ]);
-
+    const authRec = envManaged ? null : await storeDb.getAdminAuthRecord();
     const token = extractAdminToken(req);
     const authenticated = verifyAdminToken(token);
 
     res.json({
       needsSetup: !envManaged && !authRec,
       envManaged,
+      requiresSetupKey,
       authenticated,
-      locked: attemptStatus.locked,
-      remainingSeconds: attemptStatus.remainingSeconds,
-      attemptsRemaining: attemptStatus.attemptsRemaining,
+      ...(authenticated
+        ? { username: envManaged ? envUsername : authRec?.username || 'admin' }
+        : {}),
     });
   });
 
   app.post('/api/admin/auth/setup', async (req, res) => {
     const ip = getClientIp(req);
-    const attemptStatus = await storeDb.getLoginAttemptStatus(ip);
+    const attemptStatus = await storeDb.getLoginAttemptStatus(ip, '_setup');
     if (attemptStatus.locked) {
       return res.status(429).json({
-        error: 'Accès temporairement verrouillé.',
+        error: 'Trop de tentatives. Veuillez patienter avant de réessayer.',
         locked: true,
         remainingSeconds: attemptStatus.remainingSeconds,
       });
@@ -346,21 +355,36 @@ export function createApiApp(): Express {
       });
     }
 
+    const expectedSetupKey = (process.env.ADMIN_SETUP_KEY || '').trim();
+    if (expectedSetupKey.length > 0) {
+      const providedKey = String(req.body?.setupKey || '');
+      if (!verifyEnvPasscode(providedKey, expectedSetupKey)) {
+        const updated = await storeDb.recordFailedLoginAttempt(ip, '_setup');
+        return res.status(updated.locked ? 429 : 403).json({
+          error: updated.locked
+            ? 'Trop de tentatives. Veuillez patienter avant de réessayer.'
+            : 'Clé de configuration invalide.',
+          locked: updated.locked,
+          remainingSeconds: updated.remainingSeconds,
+        });
+      }
+    }
+
     const existing = await storeDb.getAdminAuthRecord();
     if (existing) {
       return res.status(409).json({ error: 'Le compte administrateur est déjà configuré.' });
     }
 
-    const username = String(req.body?.username || req.body?.login || 'admin').trim();
+    const username = String(req.body?.username || req.body?.login || '').trim();
     const password = String(req.body?.password || '');
-    if (username.length < 2 || username.length > 64) {
+    if (username.length < 3 || username.length > 64) {
       return res.status(400).json({
-        error: 'L’identifiant doit contenir entre 2 et 64 caractères.',
+        error: 'L’identifiant doit contenir entre 3 et 64 caractères.',
       });
     }
-    if (password.length < 6 || password.length > 128) {
+    if (password.length < 12 || password.length > 128) {
       return res.status(400).json({
-        error: 'Le mot de passe doit contenir au moins 6 caractères.',
+        error: 'Le mot de passe doit contenir au moins 12 caractères.',
       });
     }
 
@@ -370,28 +394,28 @@ export function createApiApp(): Express {
       return res.status(409).json({ error: 'Le compte administrateur est déjà configuré.' });
     }
 
-    await storeDb.resetLoginAttempts(ip);
+    await storeDb.resetLoginAttempts(ip, '_setup');
+    await storeDb.resetLoginAttempts(ip, username);
     const token = createAdminToken();
     setAdminSessionCookie(req, res, token);
-    return res.status(201).json({ token });
+    return res.status(201).json({ ok: true, authenticated: true });
   });
 
   app.post('/api/admin/auth/login', async (req, res) => {
     const ip = getClientIp(req);
-    const attemptStatus = await storeDb.getLoginAttemptStatus(ip);
-    if (attemptStatus.locked) {
-      return res.status(429).json({
-        error: 'Trop de tentatives échouées. Adresse IP bloquée pendant 15 minutes.',
-        locked: true,
-        remainingSeconds: attemptStatus.remainingSeconds,
-        attemptsRemaining: 0,
-      });
-    }
-
     const username = String(req.body?.username || req.body?.login || '').trim();
     const password = String(req.body?.password || '');
     if (!username || !password) {
       return res.status(400).json({ error: 'Veuillez saisir votre identifiant et mot de passe.' });
+    }
+
+    const attemptStatus = await storeDb.getLoginAttemptStatus(ip, username);
+    if (attemptStatus.locked) {
+      return res.status(429).json({
+        error: 'Trop de tentatives échouées. Veuillez patienter avant de réessayer.',
+        locked: true,
+        remainingSeconds: attemptStatus.remainingSeconds,
+      });
     }
 
     const envPasscode = (process.env.ADMIN_PASSCODE || '').trim();
@@ -413,21 +437,20 @@ export function createApiApp(): Express {
     }
 
     if (!valid) {
-      const updated = await storeDb.recordFailedLoginAttempt(ip);
+      const updated = await storeDb.recordFailedLoginAttempt(ip, username);
       return res.status(updated.locked ? 429 : 401).json({
         error: updated.locked
-          ? '3 tentatives échouées. Accès bloqué pendant 15 minutes.'
-          : `Identifiant ou mot de passe incorrect (${updated.attemptsRemaining} essai(s) restant(s)).`,
+          ? 'Trop de tentatives échouées. Veuillez patienter avant de réessayer.'
+          : 'Identifiant ou mot de passe incorrect.',
         locked: updated.locked,
         remainingSeconds: updated.remainingSeconds,
-        attemptsRemaining: updated.attemptsRemaining,
       });
     }
 
-    await storeDb.resetLoginAttempts(ip);
+    await storeDb.resetLoginAttempts(ip, username);
     const token = createAdminToken();
     setAdminSessionCookie(req, res, token);
-    return res.json({ token });
+    return res.json({ ok: true, authenticated: true });
   });
 
   app.post('/api/admin/auth/logout', (req, res) => {
@@ -442,6 +465,68 @@ export function createApiApp(): Express {
     }
     return next();
   };
+
+  app.post('/api/admin/auth/change-password', requireAdmin, async (req, res) => {
+    const envPasscode = (process.env.ADMIN_PASSCODE || '').trim();
+    if (envPasscode.length > 0) {
+      return res.status(400).json({
+        error: 'Le mot de passe est géré via les variables d’environnement du serveur (ADMIN_PASSCODE).',
+      });
+    }
+
+    const ip = getClientIp(req);
+    const attemptStatus = await storeDb.getLoginAttemptStatus(ip, '_pwchange');
+    if (attemptStatus.locked) {
+      return res.status(429).json({
+        error: `Trop de tentatives. Réessayez dans ${attemptStatus.remainingSeconds}s.`,
+      });
+    }
+
+    const currentPassword = String(req.body?.currentPassword || '');
+    const newPassword = String(req.body?.newPassword || '');
+    const newUsernameRaw =
+      typeof req.body?.newUsername === 'string' ? req.body.newUsername.trim() : '';
+
+    if (!currentPassword) {
+      return res.status(400).json({ error: 'Veuillez saisir votre mot de passe actuel.' });
+    }
+    if (newPassword.length < 12 || newPassword.length > 128) {
+      return res.status(400).json({
+        error: 'Le nouveau mot de passe doit contenir au moins 12 caractères.',
+      });
+    }
+    if (newUsernameRaw && (newUsernameRaw.length < 3 || newUsernameRaw.length > 64)) {
+      return res.status(400).json({
+        error: 'Le nouvel identifiant doit contenir entre 3 et 64 caractères.',
+      });
+    }
+
+    const rec = await storeDb.getAdminAuthRecord();
+    if (!rec) {
+      return res.status(400).json({ error: 'Compte administrateur introuvable.' });
+    }
+
+    if (!verifyPassword(currentPassword, rec.password_hash, rec.password_salt)) {
+      const updated = await storeDb.recordFailedLoginAttempt(ip, '_pwchange');
+      return res.status(updated.locked ? 429 : 401).json({
+        error: updated.locked
+          ? `Trop de tentatives. Réessayez dans ${updated.remainingSeconds}s.`
+          : 'Mot de passe actuel incorrect.',
+      });
+    }
+
+    const nextUsername = newUsernameRaw || rec.username || 'admin';
+    const { hash, salt } = hashPassword(newPassword);
+    const updatedOk = await storeDb.updateAdminCredentials(nextUsername, hash, salt);
+    if (!updatedOk) {
+      return res.status(500).json({ error: 'Impossible de mettre à jour le mot de passe.' });
+    }
+
+    await storeDb.resetLoginAttempts(ip, '_pwchange');
+    const rotatedToken = createAdminToken();
+    setAdminSessionCookie(req, res, rotatedToken);
+    return res.json({ ok: true, username: nextUsername });
+  });
 
   // Protected Admin Routes
   app.get('/api/admin/overview', requireAdmin, async (_req, res) => {
@@ -545,8 +630,15 @@ export function createApiApp(): Express {
         patch.price = p;
       }
       if (b.sale_price !== undefined) {
-        patch.sale_price =
-          b.sale_price === null || b.sale_price === '' ? null : Number(b.sale_price);
+        if (b.sale_price === null || b.sale_price === '') {
+          patch.sale_price = null;
+        } else {
+          const sp = Number(b.sale_price);
+          if (!Number.isFinite(sp) || sp < 0) {
+            return res.status(400).json({ error: 'Prix promotionnel invalide.' });
+          }
+          patch.sale_price = sp;
+        }
       }
       if (b.stock !== undefined) {
         patch.stock = Math.max(0, Math.floor(Number(b.stock)));

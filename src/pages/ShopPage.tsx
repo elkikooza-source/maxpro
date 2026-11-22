@@ -99,46 +99,45 @@ export default function ShopPage() {
     maxPrice !== '';
 
   return (
-    <div className="min-h-screen pt-32 sm:pt-36 pb-20 max-w-7xl mx-auto px-4 sm:px-6">
-      <header className="mb-10 space-y-2">
-        <h1 className="font-display text-3xl sm:text-5xl font-semibold text-white tracking-tight">
+    <div className="min-h-screen pt-24 sm:pt-36 pb-20 max-w-7xl mx-auto px-3.5 sm:px-6">
+      <header className="mb-6 sm:mb-10 space-y-1.5 sm:space-y-2">
+        <h1 className="font-display text-2xl sm:text-5xl font-semibold text-white tracking-tight">
           {t.shop.title}
         </h1>
-        <p className="text-sm sm:text-base text-zinc-400">{t.shop.subtitle}</p>
+        <p className="text-xs sm:text-base text-zinc-400">{t.shop.subtitle}</p>
       </header>
 
       {/* Filter & Search Toolbar */}
-      <section className="glass-surface rounded-2xl p-4 sm:p-5 mb-8 space-y-4">
-        <div className="flex flex-col lg:flex-row gap-3.5">
+      <section className="glass-surface rounded-2xl p-3.5 sm:p-5 mb-6 sm:mb-8 space-y-3.5 sm:space-y-4">
+        <div className="flex flex-col lg:flex-row gap-3">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 text-zinc-500 absolute start-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-4 h-4 text-zinc-400 absolute start-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t.shop.searchPlaceholder}
-              className="w-full min-h-[44px] ps-10 pe-4 rounded-xl bg-black/40 border border-white/10 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
+              className="w-full min-h-[44px] ps-10 pe-4 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
             />
           </div>
 
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+            <div className="grid grid-cols-2 sm:flex items-center gap-2">
               <input
                 type="number"
                 min={0}
                 value={minPrice}
                 onChange={(e) => setMinPrice(e.target.value)}
                 placeholder={t.shop.minPrice}
-                className="w-24 sm:w-28 min-h-[44px] px-3 rounded-xl bg-black/40 border border-white/10 text-sm text-white placeholder:text-zinc-500 tabular-nums focus:outline-none focus:border-white/30"
+                className="w-full sm:w-28 min-h-[44px] px-3 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 tabular-nums focus:outline-none focus:border-white/30"
               />
-              <span className="text-zinc-600">-</span>
               <input
                 type="number"
                 min={0}
                 value={maxPrice}
                 onChange={(e) => setMaxPrice(e.target.value)}
                 placeholder={t.shop.maxPrice}
-                className="w-24 sm:w-28 min-h-[44px] px-3 rounded-xl bg-black/40 border border-white/10 text-sm text-white placeholder:text-zinc-500 tabular-nums focus:outline-none focus:border-white/30"
+                className="w-full sm:w-28 min-h-[44px] px-3 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 tabular-nums focus:outline-none focus:border-white/30"
               />
             </div>
 
@@ -147,7 +146,7 @@ export default function ShopPage() {
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortOption)}
-                className="w-full sm:w-48 min-h-[44px] ps-9 pe-3 rounded-xl bg-black/50 border border-white/10 text-sm text-zinc-200 focus:outline-none focus:border-white/30 cursor-pointer"
+                className="w-full sm:w-48 min-h-[44px] ps-9 pe-3 rounded-xl bg-zinc-900 border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/30 cursor-pointer"
               >
                 <option value="featured">{t.shop.sortFeatured}</option>
                 <option value="price_asc">{t.shop.sortPriceAsc}</option>
@@ -167,8 +166,8 @@ export default function ShopPage() {
               onClick={() => setSelectedCategory('all')}
               className={`min-h-[38px] px-3.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                 selectedCategory === 'all'
-                  ? 'bg-white text-zinc-950'
-                  : 'bg-white/[0.04] text-zinc-300 hover:bg-white/[0.09]'
+                  ? 'bg-white text-zinc-950 font-semibold'
+                  : 'bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08] border border-white/[0.06]'
               }`}
             >
               {t.shop.allCategories}
@@ -183,8 +182,8 @@ export default function ShopPage() {
                   onClick={() => setSelectedCategory(cat.slug)}
                   className={`min-h-[38px] px-3.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                     active
-                      ? 'bg-white text-zinc-950'
-                      : 'bg-white/[0.04] text-zinc-300 hover:bg-white/[0.09]'
+                      ? 'bg-white text-zinc-950 font-semibold'
+                      : 'bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08] border border-white/[0.06]'
                   }`}
                 >
                   {lang === 'ar' ? cat.name_ar : cat.name_fr}
@@ -201,7 +200,7 @@ export default function ShopPage() {
               onClick={() => setOnlyBestsellers((v) => !v)}
               className={`min-h-[38px] px-3.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 border transition-colors cursor-pointer ${
                 onlyBestsellers
-                  ? 'bg-zinc-200 text-zinc-950 border-white'
+                  ? 'bg-white text-zinc-950 border-white font-semibold'
                   : 'border-white/10 text-zinc-300 hover:bg-white/[0.06]'
               }`}
             >
@@ -213,7 +212,7 @@ export default function ShopPage() {
               onClick={() => setOnlyNew((v) => !v)}
               className={`min-h-[38px] px-3.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 border transition-colors cursor-pointer ${
                 onlyNew
-                  ? 'bg-zinc-200 text-zinc-950 border-white'
+                  ? 'bg-white text-zinc-950 border-white font-semibold'
                   : 'border-white/10 text-zinc-300 hover:bg-white/[0.06]'
               }`}
             >
@@ -251,13 +250,13 @@ export default function ShopPage() {
       </div>
 
       {loading && products.length === 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
           {[0, 1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="rounded-2xl glass-surface h-80 animate-pulse bg-white/[0.03]" />
+            <div key={i} className="rounded-2xl glass-surface h-64 sm:h-80 animate-pulse bg-white/[0.02]" />
           ))}
         </div>
       ) : filteredProducts.length === 0 ? (
-        <div className="glass-surface rounded-2xl p-12 text-center space-y-4">
+        <div className="glass-surface rounded-2xl p-10 sm:p-12 text-center space-y-4">
           <p className="text-base text-zinc-300">{t.shop.emptyTitle}</p>
           <button
             type="button"
@@ -268,7 +267,7 @@ export default function ShopPage() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
           {filteredProducts.map((product) => (
             <ProductCard
               key={product.id}

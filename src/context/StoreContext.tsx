@@ -31,8 +31,6 @@ interface StoreContextValue {
   cartShippingFee: number;
   cartTotal: number;
   cartCount: number;
-  adminToken: string | null;
-  setAdminToken: (token: string | null) => void;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -68,9 +66,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState<CartItem[]>(getInitialCart);
   const [cartOpen, setCartOpen] = useState(false);
-
-  // Admin signed HMAC token lives strictly in React memory (never persisted in localStorage/sessionStorage)
-  const [adminToken, setAdminToken] = useState<string | null>(null);
 
   useEffect(() => {
     document.documentElement.lang = lang;
@@ -226,8 +221,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     cartShippingFee,
     cartTotal,
     cartCount,
-    adminToken,
-    setAdminToken,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

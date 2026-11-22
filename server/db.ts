@@ -368,7 +368,7 @@ class StoreDatabase {
       this.activeMode = 'sqlite';
       if (failedProbe.status === 403 || failedProbe.errorText.includes('42501')) {
         this.supabaseError =
-          "Privilèges Supabase manquants (42501) : exécutez le script SQL dans l'éditeur SQL Supabase pour accorder les droits à service_role.";
+          'Privilèges Supabase manquants (42501) : exécutez supabase/schema.sql dans Supabase SQL Editor.';
       } else if (
         failedProbe.errorText.includes('PGRST204') ||
         failedProbe.errorText.includes('42703') ||
@@ -377,14 +377,15 @@ class StoreDatabase {
         failedProbe.status === 400 ||
         failedProbe.status === 404
       ) {
-        this.supabaseError = `Colonnes ou tables Supabase incomplètes (${failedProbe.errorText}). Exécutez le script SQL complet (« Voir l’aide SQL ») dans Supabase SQL Editor.`;
+        this.supabaseError =
+          'Schéma ou colonnes Supabase incomplets : exécutez supabase/schema.sql dans Supabase SQL Editor.';
       } else {
-        this.supabaseError = `Connexion Supabase incomplète (${failedProbe.status || 'réseau'}) : ${failedProbe.errorText}`;
+        this.supabaseError = `Connexion Supabase indisponible (code ${failedProbe.status || 'réseau'}).`;
       }
       return this.getStatus();
     }
 
-    // Seed Supabase if empty and verify writes succeed (e.g. catch incompatible id column types like uuid/int8)
+    // Seed Supabase if empty and verify writes succeed (e.g. catch incompatible schema column types)
     try {
       if (Array.isArray(probeCat.data) && probeCat.data.length === 0) {
         const catSeed = await this.supabaseFetch('categories', {
@@ -394,7 +395,8 @@ class StoreDatabase {
         });
         if (!catSeed.ok) {
           this.activeMode = 'sqlite';
-          this.supabaseError = `Structure de table Supabase incompatible (categories : ${catSeed.errorText}). Exécutez le script SQL de réinitialisation (« Voir l’aide SQL »).`;
+          this.supabaseError =
+            'Structure de schéma Supabase incompatible : exécutez supabase/schema.sql dans Supabase SQL Editor.';
           return this.getStatus();
         }
       }
@@ -407,7 +409,8 @@ class StoreDatabase {
         });
         if (!prodSeed.ok) {
           this.activeMode = 'sqlite';
-          this.supabaseError = `Structure de table Supabase incompatible (products : ${prodSeed.errorText}). Exécutez le script SQL de réinitialisation (« Voir l’aide SQL »).`;
+          this.supabaseError =
+            'Structure de schéma Supabase incompatible : exécutez supabase/schema.sql dans Supabase SQL Editor.';
           return this.getStatus();
         }
       }
@@ -420,13 +423,14 @@ class StoreDatabase {
         });
         if (!setSeed.ok) {
           this.activeMode = 'sqlite';
-          this.supabaseError = `Structure de table Supabase incompatible (site_settings : ${setSeed.errorText}). Exécutez le script SQL de réinitialisation (« Voir l’aide SQL »).`;
+          this.supabaseError =
+            'Structure de schéma Supabase incompatible : exécutez supabase/schema.sql dans Supabase SQL Editor.';
           return this.getStatus();
         }
       }
-    } catch (err) {
+    } catch {
       this.activeMode = 'sqlite';
-      this.supabaseError = `Erreur d'initialisation Supabase : ${err instanceof Error ? err.message : 'Erreur inconnue'}`;
+      this.supabaseError = "Erreur d'initialisation Supabase : vérifiez vos variables et supabase/schema.sql.";
       return this.getStatus();
     }
 
@@ -1381,28 +1385,107 @@ class StoreDatabase {
     return info.changes > 0;
   }
 
-  // Brute-force IP lock tracking (3 attempts -> 15-minute ban)
-  public async getLoginAttemptStatus(ip: string): Promise<{
+  public async updateAdminCredentials(
+    username: string,
+    passwordHash: string,
+    passwordSalt: string
+  ): Promise<boolean> {
+    const now = new Date().toISOString();
+    const cleanUser = username.trim() || 'admin';
+
+    if (this.activeMode === 'supabase') {
+      const res = await this.supabaseFetch<AdminAuthRecord[]>(
+        'admin_auth?id=eq.primary',
+        {
+          method: 'PATCH',
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify({
+            username: cleanUser,
+            password_hash: passwordHash,
+            password_salt: passwordSalt,
+            updated_at: now,
+          }),
+        }
+      );
+
+      if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+        return true;
+      }
+
+      if (!res.ok && res.errorText.includes('username')) {
+        const retry = await this.supabaseFetch<AdminAuthRecord[]>(
+          'admin_auth?id=eq.primary',
+          {
+            method: 'PATCH',
+            headers: { Prefer: 'return=representation' },
+            body: JSON.stringify({
+              password_hash: passwordHash,
+              password_salt: passwordSalt,
+              updated_at: now,
+            }),
+          }
+        );
+        if (retry.ok && Array.isArray(retry.data) && retry.data.length > 0) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    const info = this.sqlite
+      .prepare(
+        `INSERT INTO admin_auth (id, username, password_hash, password_salt, created_at, updated_at)
+         VALUES ('primary', ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           username = excluded.username,
+           password_hash = excluded.password_hash,
+           password_salt = excluded.password_salt,
+           updated_at = excluded.updated_at`
+      )
+      .run(cleanUser, passwordHash, passwordSalt, now, now);
+    return info.changes > 0;
+  }
+
+  private buildAttemptKey(ip: string, username = ''): string {
+    const cleanIp = (ip || 'unknown').trim().slice(0, 64);
+    const cleanUser = username.trim().toLowerCase().slice(0, 64) || '_default';
+    return `${cleanIp}::${cleanUser}`;
+  }
+
+  private getBackoffSeconds(attempts: number): number {
+    if (attempts < 3) return 0;
+    if (attempts === 3) return 15;
+    if (attempts === 4) return 60;
+    if (attempts === 5) return 300;
+    return 900;
+  }
+
+  // Scoped (ip, username) exponential backoff tracking (15s -> 60s -> 5m -> 15m)
+  public async getLoginAttemptStatus(
+    ip: string,
+    username = ''
+  ): Promise<{
     locked: boolean;
     remainingSeconds: number;
     attempts: number;
-    attemptsRemaining: number;
   }> {
+    const scopeKey = this.buildAttemptKey(ip, username);
     let rec: LoginAttemptRecord | null = null;
     if (this.activeMode === 'supabase') {
       const res = await this.supabaseFetch<LoginAttemptRecord[]>(
-        `admin_login_attempts?ip=eq.${encodeURIComponent(ip)}&select=*&limit=1`
+        `admin_login_attempts?ip=eq.${encodeURIComponent(scopeKey)}&select=*&limit=1`
       );
       if (res.ok && res.data?.[0]) rec = res.data[0];
     } else {
       rec =
         (this.sqlite
           .prepare('SELECT * FROM admin_login_attempts WHERE ip = ? LIMIT 1')
-          .get(ip) as LoginAttemptRecord | undefined) || null;
+          .get(scopeKey) as LoginAttemptRecord | undefined) || null;
     }
 
     if (!rec) {
-      return { locked: false, remainingSeconds: 0, attempts: 0, attemptsRemaining: 3 };
+      return { locked: false, remainingSeconds: 0, attempts: 0 };
     }
 
     if (rec.locked_until) {
@@ -1413,35 +1496,39 @@ class StoreDatabase {
           locked: true,
           remainingSeconds: Math.ceil((lockExpiry - now) / 1000),
           attempts: rec.attempts,
-          attemptsRemaining: 0,
         };
       }
-      // Lock expired — reset
-      await this.resetLoginAttempts(ip);
-      return { locked: false, remainingSeconds: 0, attempts: 0, attemptsRemaining: 3 };
+      // Cooldown window elapsed — allow next attempt while retaining count for backoff escalation
+      return {
+        locked: false,
+        remainingSeconds: 0,
+        attempts: rec.attempts,
+      };
     }
 
     return {
       locked: false,
       remainingSeconds: 0,
       attempts: rec.attempts,
-      attemptsRemaining: Math.max(0, 3 - rec.attempts),
     };
   }
 
-  public async recordFailedLoginAttempt(ip: string): Promise<{
+  public async recordFailedLoginAttempt(
+    ip: string,
+    username = ''
+  ): Promise<{
     locked: boolean;
     remainingSeconds: number;
     attempts: number;
-    attemptsRemaining: number;
   }> {
-    const current = await this.getLoginAttemptStatus(ip);
+    const scopeKey = this.buildAttemptKey(ip, username);
+    const current = await this.getLoginAttemptStatus(ip, username);
     if (current.locked) return current;
 
     const nextAttempts = current.attempts + 1;
-    const isNowLocked = nextAttempts >= 3;
-    const lockDurationMs = 15 * 60 * 1000;
-    const lockedUntil = isNowLocked ? new Date(Date.now() + lockDurationMs).toISOString() : null;
+    const lockSeconds = this.getBackoffSeconds(nextAttempts);
+    const isNowLocked = lockSeconds > 0;
+    const lockedUntil = isNowLocked ? new Date(Date.now() + lockSeconds * 1000).toISOString() : null;
     const now = new Date().toISOString();
 
     if (this.activeMode === 'supabase') {
@@ -1450,7 +1537,7 @@ class StoreDatabase {
         headers: { Prefer: 'resolution=merge-duplicates' },
         body: JSON.stringify([
           {
-            ip,
+            ip: scopeKey,
             attempts: nextAttempts,
             locked_until: lockedUntil,
             last_attempt_at: now,
@@ -1467,25 +1554,25 @@ class StoreDatabase {
              locked_until = excluded.locked_until,
              last_attempt_at = excluded.last_attempt_at`
         )
-        .run(ip, nextAttempts, lockedUntil, now);
+        .run(scopeKey, nextAttempts, lockedUntil, now);
     }
 
     return {
       locked: isNowLocked,
-      remainingSeconds: isNowLocked ? 15 * 60 : 0,
+      remainingSeconds: lockSeconds,
       attempts: nextAttempts,
-      attemptsRemaining: Math.max(0, 3 - nextAttempts),
     };
   }
 
-  public async resetLoginAttempts(ip: string): Promise<void> {
+  public async resetLoginAttempts(ip: string, username = ''): Promise<void> {
+    const scopeKey = this.buildAttemptKey(ip, username);
     if (this.activeMode === 'supabase') {
-      await this.supabaseFetch(`admin_login_attempts?ip=eq.${encodeURIComponent(ip)}`, {
+      await this.supabaseFetch(`admin_login_attempts?ip=eq.${encodeURIComponent(scopeKey)}`, {
         method: 'DELETE',
       });
       return;
     }
-    this.sqlite.prepare('DELETE FROM admin_login_attempts WHERE ip = ?').run(ip);
+    this.sqlite.prepare('DELETE FROM admin_login_attempts WHERE ip = ?').run(scopeKey);
   }
 
   // Media upload to Supabase Storage (with auto-create public bucket) or confined local uploads/

@@ -7,7 +7,23 @@ interface SafeImageProps {
   eager?: boolean;
 }
 
+function getSafeImageUrl(rawUrl?: string): string | null {
+  if (!rawUrl) return null;
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('/')) {
+    return trimmed.startsWith('//') ? null : trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
 export function SafeImage({ src, alt, className = '', eager = false }: SafeImageProps) {
+  const safeSrc = getSafeImageUrl(src);
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -15,12 +31,12 @@ export function SafeImage({ src, alt, className = '', eager = false }: SafeImage
   useEffect(() => {
     setFailed(false);
     setLoaded(Boolean(imgRef.current?.complete && imgRef.current?.naturalWidth > 0));
-  }, [src]);
+  }, [safeSrc]);
 
-  if (!src || failed) {
+  if (!safeSrc || failed) {
     return (
       <div
-        className={`flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 via-[#0d0f14] to-zinc-950 text-zinc-500 select-none ${className}`}
+        className={`flex flex-col items-center justify-center bg-gradient-to-br from-zinc-900 via-zinc-950 to-black text-zinc-500 select-none ${className}`}
         role="img"
         aria-label={alt}
       >
@@ -38,7 +54,7 @@ export function SafeImage({ src, alt, className = '', eager = false }: SafeImage
           <circle cx="7.5" cy="17" r="2.5" />
           <circle cx="16.5" cy="17" r="2.5" />
         </svg>
-        <span className="text-[11px] tracking-widest uppercase text-zinc-600 font-medium px-4 text-center line-clamp-1">
+        <span className="text-[11px] tracking-widest uppercase text-zinc-500 font-medium px-4 text-center line-clamp-1">
           maxPro
         </span>
       </div>
@@ -48,7 +64,7 @@ export function SafeImage({ src, alt, className = '', eager = false }: SafeImage
   return (
     <img
       ref={imgRef}
-      src={src}
+      src={safeSrc}
       alt={alt}
       loading={eager ? 'eager' : 'lazy'}
       decoding="async"
@@ -56,7 +72,7 @@ export function SafeImage({ src, alt, className = '', eager = false }: SafeImage
       referrerPolicy="no-referrer"
       onLoad={() => setLoaded(true)}
       onError={() => setFailed(true)}
-      className={`${className} bg-[#0c0e13] transition-opacity duration-150 ${loaded ? 'opacity-100' : 'opacity-50'}`}
+      className={`${className} bg-zinc-900 transition-opacity duration-150 ${loaded ? 'opacity-100' : 'opacity-65'}`}
     />
   );
 }

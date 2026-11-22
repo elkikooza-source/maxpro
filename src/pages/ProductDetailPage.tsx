@@ -98,21 +98,21 @@ export default function ProductDetailPage() {
   };
 
   return (
-    <div className="min-h-screen pt-32 sm:pt-36 pb-28 sm:pb-20 max-w-7xl mx-auto px-4 sm:px-6">
-      <div className="mb-8">
+    <div className="min-h-screen pt-24 sm:pt-36 pb-24 sm:pb-20 max-w-7xl mx-auto px-3.5 sm:px-6">
+      <div className="mb-5 sm:mb-8">
         <Link
           to="/shop"
-          className="inline-flex items-center gap-2 text-xs sm:text-sm text-zinc-400 hover:text-white transition-colors"
+          className="inline-flex items-center gap-2 min-h-[36px] text-xs sm:text-sm text-zinc-400 hover:text-white transition-colors"
         >
           <ArrowLeft className={`w-4 h-4 ${lang === 'ar' ? 'rotate-180' : ''}`} />
           <span>{t.product.backToShop}</span>
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-12 items-start">
         {/* Interactive Image Gallery */}
-        <div className="lg:col-span-7 space-y-4 lg:sticky lg:top-28">
-          <div className="aspect-[4/3] rounded-2xl overflow-hidden glass-surface bg-[#0c0e13]">
+        <div className="lg:col-span-7 space-y-3 sm:space-y-4 lg:sticky lg:top-28">
+          <div className="aspect-[4/3] rounded-2xl overflow-hidden glass-surface bg-zinc-950">
             <SafeImage
               src={product.images[activeImage] || product.images[0]}
               alt={name}
@@ -122,16 +122,16 @@ export default function ProductDetailPage() {
           </div>
 
           {product.images.length > 1 && (
-            <div className="flex items-center gap-3 overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-2.5 sm:gap-3 overflow-x-auto no-scrollbar">
               {product.images.map((img, idx) => (
                 <button
                   key={`${img}-${idx}`}
                   type="button"
                   onClick={() => setActiveImage(idx)}
-                  className={`w-24 aspect-[4/3] rounded-xl overflow-hidden border transition-all shrink-0 cursor-pointer ${
+                  className={`w-20 sm:w-24 aspect-[4/3] rounded-xl overflow-hidden border transition-all shrink-0 cursor-pointer ${
                     activeImage === idx
                       ? 'border-white opacity-100'
-                      : 'border-white/10 opacity-60 hover:opacity-90'
+                      : 'border-white/10 opacity-55 hover:opacity-90'
                   }`}
                 >
                   <SafeImage src={img} alt={`${name} ${idx + 1}`} className="w-full h-full object-cover" />
@@ -142,12 +142,12 @@ export default function ProductDetailPage() {
         </div>
 
         {/* Contiguous Purchase Module */}
-        <div className="lg:col-span-5 glass-panel rounded-2xl p-6 sm:p-8 space-y-6">
+        <div className="lg:col-span-5 glass-panel rounded-2xl p-4 sm:p-8 space-y-5 sm:space-y-6">
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-xs text-zinc-400">
               {catName && <span>{catName}</span>}
               {catName && <span aria-hidden="true">·</span>}
-              <span className={product.stock > 0 ? 'text-zinc-300' : 'text-red-400'}>
+              <span className={product.stock > 0 ? 'text-zinc-300' : 'text-red-300'}>
                 {product.stock > 0
                   ? `${product.stock} ${t.product.availableUnits}`
                   : t.product.outOfStock}
@@ -174,7 +174,7 @@ export default function ProductDetailPage() {
 
           {product.variations.length > 0 && (
             <div className="space-y-2.5">
-              <span className="text-xs font-medium text-zinc-400 block">
+              <span className="text-xs font-medium text-zinc-300 block">
                 {t.product.variation}
               </span>
               <div className="flex flex-wrap gap-2">
@@ -188,8 +188,8 @@ export default function ProductDetailPage() {
                       onClick={() => setSelectedVariation(v)}
                       className={`min-h-[40px] px-4 rounded-xl text-xs sm:text-sm font-medium border transition-colors cursor-pointer ${
                         active
-                          ? 'bg-white text-zinc-950 border-white'
-                          : 'bg-white/[0.03] text-zinc-200 border-white/10 hover:border-white/30'
+                          ? 'bg-white text-zinc-950 border-white font-semibold'
+                          : 'bg-white/[0.04] text-zinc-200 border-white/10 hover:border-white/30'
                       }`}
                     >
                       {label}
@@ -206,8 +206,8 @@ export default function ProductDetailPage() {
           )}
 
           <div className="space-y-3">
-            <span className="text-xs font-medium text-zinc-400 block">{t.product.quantity}</span>
-            <div className="inline-flex items-center rounded-xl border border-white/10 bg-black/40">
+            <span className="text-xs font-medium text-zinc-300 block">{t.product.quantity}</span>
+            <div className="inline-flex items-center rounded-xl border border-white/10 bg-white/[0.03]">
               <button
                 type="button"
                 disabled={quantity <= 1}
@@ -235,7 +235,7 @@ export default function ProductDetailPage() {
               type="button"
               disabled={product.stock <= 0}
               onClick={handleAdd}
-              className="min-h-[48px] px-5 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/15 text-white disabled:opacity-40 text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              className="min-h-[48px] px-5 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-white disabled:opacity-40 text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
             >
               {justAdded ? <Check className="w-4 h-4" /> : <ShoppingBag className="w-4 h-4" />}
               <span>{justAdded ? t.product.addedFeedback : t.product.addToCart}</span>
@@ -266,11 +266,11 @@ export default function ProductDetailPage() {
 
       {/* Related Products */}
       {related.length > 0 && (
-        <section className="mt-20 pt-14 border-t border-white/[0.08]">
-          <h2 className="font-display text-2xl font-semibold text-white mb-8">
+        <section className="mt-14 sm:mt-20 pt-10 sm:pt-14 border-t border-white/[0.06]">
+          <h2 className="font-display text-xl sm:text-2xl font-semibold text-white mb-6 sm:mb-8">
             {t.product.relatedTitle}
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
             {related.map((item) => (
               <ProductCard
                 key={item.id}
@@ -284,16 +284,16 @@ export default function ProductDetailPage() {
 
       {/* Mobile Sticky Bottom Buy Bar (<= 15% mobile viewport height) */}
       {product.stock > 0 && (
-        <div className="sm:hidden fixed bottom-0 inset-x-0 z-30 glass-nav border-t border-white/10 px-4 py-2.5 flex items-center justify-between gap-3">
-          <div className="tabular-nums">
-            <span className="text-sm font-semibold text-white block">
+        <div className="sm:hidden fixed bottom-0 inset-x-0 z-30 glass-nav border-t border-white/10 px-4 pt-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))] flex items-center justify-between gap-3">
+          <div className="tabular-nums min-w-0">
+            <span className="text-sm font-semibold text-white block truncate">
               {formatTnd(finalPrice, lang)}
             </span>
           </div>
           <button
             type="button"
             onClick={handleBuyNow}
-            className="min-h-[44px] px-5 rounded-xl bg-white text-zinc-950 text-xs font-semibold whitespace-nowrap shrink-0"
+            className="min-h-[44px] px-5 rounded-xl bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 whitespace-nowrap shrink-0 cursor-pointer"
           >
             {t.product.buyNow}
           </button>

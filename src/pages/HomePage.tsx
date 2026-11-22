@@ -38,7 +38,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen">
       {/* Cinematic Dark Automotive Cabin Hero */}
-      <section className="relative min-h-[92vh] sm:min-h-screen flex items-end pb-16 sm:pb-24 pt-28 overflow-hidden">
+      <section className="relative min-h-[85svh] sm:min-h-screen flex items-end pb-12 sm:pb-24 pt-24 sm:pt-28 overflow-hidden">
         <div className="absolute inset-0">
           <SafeImage
             src={settings.hero_image}
@@ -46,8 +46,8 @@ export default function HomePage() {
             eager
             className="w-full h-full object-cover object-center scale-[1.02]"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#060709] via-[#060709]/55 to-[#060709]/35" />
-          <div className="absolute inset-0 bg-gradient-to-r from-[#060709]/80 via-[#060709]/25 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#06070a] via-[#06070a]/55 to-black/25" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#06070a]/90 via-[#06070a]/45 to-transparent" />
         </div>
 
         <div className="relative z-10 max-w-7xl mx-auto w-full px-4 sm:px-6">
@@ -55,24 +55,24 @@ export default function HomePage() {
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-            className="max-w-2xl space-y-5"
+            className="max-w-2xl space-y-4 sm:space-y-5"
           >
-            <p className="text-xs sm:text-sm tracking-[0.28em] uppercase text-zinc-300 font-medium">
+            <p className="text-[11px] sm:text-sm tracking-[0.24em] sm:tracking-[0.28em] uppercase text-zinc-400 font-medium">
               {settings.brand_name} · {t.hero.scrollHint}
             </p>
 
-            <h1 className="font-display text-4xl sm:text-6xl font-semibold tracking-tight text-white leading-[1.05] text-balance">
+            <h1 className="font-display text-3xl sm:text-6xl font-semibold tracking-tight text-white leading-[1.08] sm:leading-[1.05] text-balance">
               {heroTitle}
             </h1>
 
-            <p className="text-lg sm:text-2xl text-zinc-300 font-light text-balance">
+            <p className="text-base sm:text-2xl text-zinc-300 font-light text-balance">
               {heroSubtitle}
             </p>
 
-            <div className="pt-3 flex flex-wrap items-center gap-3.5">
+            <div className="pt-2 sm:pt-3 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
               <Link
                 to="/shop"
-                className="min-h-[48px] px-6 rounded-xl bg-white text-zinc-950 hover:bg-zinc-200 transition-colors inline-flex items-center gap-2 text-sm font-semibold whitespace-nowrap shrink-0"
+                className="min-h-[48px] w-full sm:w-auto px-6 rounded-xl bg-white text-zinc-950 hover:bg-zinc-200 transition-colors inline-flex items-center justify-center gap-2 text-sm font-semibold whitespace-nowrap shrink-0"
               >
                 <span>{t.hero.ctaExplore}</span>
                 <ArrowRight className={`w-4 h-4 ${lang === 'ar' ? 'rotate-180' : ''}`} />
@@ -81,7 +81,7 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={scrollToCategories}
-                className="min-h-[48px] px-6 rounded-xl glass-panel text-white hover:bg-white/[0.1] transition-colors inline-flex items-center text-sm font-medium whitespace-nowrap shrink-0 cursor-pointer"
+                className="min-h-[48px] w-full sm:w-auto px-6 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-white transition-colors inline-flex items-center justify-center text-sm font-medium whitespace-nowrap shrink-0 cursor-pointer"
               >
                 {t.hero.ctaDiscover}
               </button>
@@ -91,20 +91,20 @@ export default function HomePage() {
       </section>
 
       {/* Editorial Categories Grid */}
-      <section id="categories" className="max-w-7xl mx-auto px-4 sm:px-6 py-20 sm:py-24">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-10 sm:mb-12">
-          <div className="space-y-2 max-w-xl">
-            <p className="text-xs tracking-[0.22em] uppercase text-zinc-400">
+      <section id="categories" className="max-w-7xl mx-auto px-3.5 sm:px-6 py-12 sm:py-24">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 sm:gap-4 mb-7 sm:mb-12">
+          <div className="space-y-1.5 sm:space-y-2 max-w-xl">
+            <p className="text-[11px] sm:text-xs tracking-[0.22em] uppercase text-zinc-400 font-medium">
               {t.home.categoriesEyebrow}
             </p>
             <h2 className="font-display text-2xl sm:text-4xl font-semibold text-white tracking-tight text-balance">
               {t.home.categoriesTitle}
             </h2>
           </div>
-          <p className="text-sm text-zinc-400 max-w-md">{t.home.categoriesSubtitle}</p>
+          <p className="text-xs sm:text-sm text-zinc-400 max-w-md">{t.home.categoriesSubtitle}</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
           {categories.map((cat) => {
             const name = lang === 'ar' ? cat.name_ar : cat.name_fr;
             const desc = lang === 'ar' ? cat.description_ar : cat.description_fr;
@@ -112,23 +112,23 @@ export default function HomePage() {
               <Link
                 key={cat.id}
                 to={`/shop?category=${encodeURIComponent(cat.slug)}`}
-                className="group relative rounded-2xl overflow-hidden glass-surface aspect-[4/3] block"
+                className="group relative rounded-2xl overflow-hidden glass-surface aspect-[4/3] block hover:border-white/25 transition-colors"
               >
                 <SafeImage
                   src={cat.image_url}
                   alt={name}
                   className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.04]"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
-                <div className="absolute inset-x-0 bottom-0 p-5 sm:p-6 flex items-end justify-between gap-4">
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
+                <div className="absolute inset-x-0 bottom-0 p-3 sm:p-6 flex items-end justify-between gap-2 sm:gap-4">
                   <div className="min-w-0">
-                    <h3 className="text-lg font-semibold text-white tracking-tight truncate">
+                    <h3 className="text-sm sm:text-lg font-semibold text-white tracking-tight truncate">
                       {name}
                     </h3>
-                    <p className="text-xs text-zinc-300 mt-1 line-clamp-2">{desc}</p>
+                    <p className="hidden sm:block text-xs text-zinc-300 mt-1 line-clamp-2">{desc}</p>
                   </div>
-                  <span className="w-9 h-9 rounded-xl bg-white/10 border border-white/15 backdrop-blur-md flex items-center justify-center text-white shrink-0 group-hover:bg-white group-hover:text-zinc-950 transition-colors">
-                    <ArrowRight className={`w-4 h-4 ${lang === 'ar' ? 'rotate-180' : ''}`} />
+                  <span className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-white/10 border border-white/15 backdrop-blur-md flex items-center justify-center text-white shrink-0 group-hover:bg-white group-hover:text-zinc-950 transition-colors">
+                    <ArrowRight className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${lang === 'ar' ? 'rotate-180' : ''}`} />
                   </span>
                 </div>
               </Link>
@@ -138,10 +138,10 @@ export default function HomePage() {
       </section>
 
       {/* Featured Products Showcase */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 py-16 sm:py-20 border-t border-white/[0.07]">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10 sm:mb-12">
-          <div className="space-y-2">
-            <p className="text-xs tracking-[0.22em] uppercase text-zinc-400">
+      <section className="max-w-7xl mx-auto px-3.5 sm:px-6 py-12 sm:py-20 border-t border-white/[0.06]">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 sm:gap-4 mb-7 sm:mb-12">
+          <div className="space-y-1.5 sm:space-y-2">
+            <p className="text-[11px] sm:text-xs tracking-[0.22em] uppercase text-zinc-400 font-medium">
               {t.home.featuredEyebrow}
             </p>
             <h2 className="font-display text-2xl sm:text-4xl font-semibold text-white tracking-tight">
@@ -158,16 +158,16 @@ export default function HomePage() {
         </div>
 
         {loading && featuredProducts.length === 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
             {[0, 1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="rounded-2xl glass-surface h-80 animate-pulse bg-white/[0.03]"
+                className="rounded-2xl glass-surface h-64 sm:h-80 animate-pulse bg-white/[0.02]"
               />
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
             {featuredProducts.map((product) => (
               <ProductCard
                 key={product.id}
@@ -180,11 +180,11 @@ export default function HomePage() {
       </section>
 
       {/* Craftsmanship & Hammam Lif Showroom Block */}
-      <section id="contact" className="max-w-7xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
-        <div className="glass-panel rounded-3xl p-6 sm:p-12 grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-stretch">
+      <section id="contact" className="max-w-7xl mx-auto px-3.5 sm:px-6 py-12 sm:py-24">
+        <div className="glass-panel rounded-3xl p-5 sm:p-12 grid grid-cols-1 lg:grid-cols-12 gap-7 sm:gap-12 items-stretch">
           <div className="lg:col-span-7 flex flex-col justify-between space-y-8">
             <div className="space-y-4">
-              <p className="text-xs tracking-[0.22em] uppercase text-zinc-400">
+              <p className="text-xs tracking-[0.22em] uppercase text-zinc-400 font-medium">
                 {t.home.craftEyebrow}
               </p>
               <h2 className="font-display text-2xl sm:text-4xl font-semibold text-white tracking-tight text-balance">
@@ -217,7 +217,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="lg:col-span-5 rounded-2xl bg-[#0a0c10]/85 border border-white/[0.08] p-6 sm:p-8 flex flex-col justify-between gap-6">
+          <div className="lg:col-span-5 rounded-2xl bg-white/[0.03] border border-white/[0.08] p-6 sm:p-8 flex flex-col justify-between gap-6">
             <div className="space-y-2">
               <h3 className="font-display text-xl font-semibold text-white">
                 {t.home.contactTitle}

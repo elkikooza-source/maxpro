@@ -76,7 +76,7 @@ export default function CheckoutPage() {
         <p className="text-sm text-zinc-400">{t.checkout.emptyCart}</p>
         <Link
           to="/shop"
-          className="min-h-[44px] px-6 rounded-xl bg-white text-zinc-950 text-sm font-semibold inline-flex items-center"
+          className="min-h-[44px] px-6 rounded-xl bg-white text-zinc-950 text-sm font-semibold hover:bg-zinc-200 inline-flex items-center"
         >
           {t.cart.emptyCta}
         </Link>
@@ -85,18 +85,18 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="min-h-screen pt-32 sm:pt-36 pb-20 max-w-6xl mx-auto px-4 sm:px-6">
-      <header className="mb-10 space-y-2">
-        <h1 className="font-display text-3xl sm:text-4xl font-semibold text-white tracking-tight">
+    <div className="min-h-screen pt-24 sm:pt-36 pb-20 max-w-6xl mx-auto px-3.5 sm:px-6">
+      <header className="mb-7 sm:mb-10 space-y-1.5 sm:space-y-2">
+        <h1 className="font-display text-2xl sm:text-4xl font-semibold text-white tracking-tight">
           {t.checkout.title}
         </h1>
-        <p className="text-sm text-zinc-400">{t.checkout.subtitle}</p>
+        <p className="text-xs sm:text-sm text-zinc-400">{t.checkout.subtitle}</p>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        <form onSubmit={handleSubmit} className="lg:col-span-7 glass-panel rounded-2xl p-6 sm:p-8 space-y-5">
-          <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 flex items-start gap-3">
-            <Banknote className="w-5 h-5 text-zinc-200 shrink-0 mt-0.5" />
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start">
+        <form onSubmit={handleSubmit} className="lg:col-span-7 glass-panel rounded-2xl p-4 sm:p-8 space-y-4 sm:space-y-5">
+          <div className="p-3.5 sm:p-4 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-start gap-3">
+            <Banknote className="w-5 h-5 text-white shrink-0 mt-0.5" />
             <div>
               <h2 className="text-sm font-semibold text-white">{t.checkout.paymentMethodTitle}</h2>
               <p className="text-xs text-zinc-400 mt-1">{t.checkout.paymentMethodDesc}</p>
@@ -104,7 +104,7 @@ export default function CheckoutPage() {
           </div>
 
           {error && (
-            <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-xs sm:text-sm text-red-200">
+            <div className="p-3.5 rounded-xl bg-red-500/15 border border-red-500/35 text-xs sm:text-sm text-red-100">
               {error}
             </div>
           )}
@@ -119,7 +119,7 @@ export default function CheckoutPage() {
                 maxLength={100}
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
-                className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white focus:outline-none focus:border-white/35"
+                className="w-full min-h-[44px] px-3.5 rounded-xl bg-white/[0.05] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/35"
               />
             </label>
 
@@ -132,7 +132,7 @@ export default function CheckoutPage() {
                 value={customerPhone}
                 onChange={(e) => setCustomerPhone(e.target.value)}
                 placeholder="+216 XX XXX XXX"
-                className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-white/35"
+                className="w-full min-h-[44px] px-3.5 rounded-xl bg-white/[0.05] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/35"
               />
             </label>
           </div>
@@ -147,7 +147,7 @@ export default function CheckoutPage() {
               list="tunisia-cities"
               value={city}
               onChange={(e) => setCity(e.target.value)}
-              className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white focus:outline-none focus:border-white/35"
+              className="w-full min-h-[44px] px-3.5 rounded-xl bg-white/[0.05] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/35"
             />
             <datalist id="tunisia-cities">
               <option value="Tunis" />
@@ -174,7 +174,7 @@ export default function CheckoutPage() {
               maxLength={250}
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white focus:outline-none focus:border-white/35"
+              className="w-full min-h-[44px] px-3.5 rounded-xl bg-white/[0.05] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/35"
             />
           </label>
 
@@ -187,7 +187,7 @@ export default function CheckoutPage() {
               maxLength={500}
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              className="w-full p-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white focus:outline-none focus:border-white/35"
+              className="w-full p-3.5 rounded-xl bg-white/[0.05] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/35"
             />
           </label>
 
@@ -201,8 +201,8 @@ export default function CheckoutPage() {
           </button>
         </form>
 
-        <aside className="lg:col-span-5 glass-surface rounded-2xl p-6 sm:p-8 space-y-6">
-          <h2 className="text-lg font-semibold text-white">{t.checkout.summaryTitle}</h2>
+        <aside className="lg:col-span-5 glass-surface rounded-2xl p-4 sm:p-8 space-y-5 sm:space-y-6">
+          <h2 className="text-base sm:text-lg font-semibold text-white">{t.checkout.summaryTitle}</h2>
 
           <div className="space-y-4">
             {cart.map((item) => {
@@ -210,7 +210,7 @@ export default function CheckoutPage() {
               const varLabel = lang === 'ar' ? item.variation_label_ar : item.variation_label_fr;
               return (
                 <div key={item.key} className="flex items-center gap-3.5">
-                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-zinc-900 shrink-0 border border-white/[0.06]">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-zinc-900 shrink-0 border border-white/[0.08]">
                     <SafeImage src={item.image_url} alt={title} className="w-full h-full object-cover" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -230,11 +230,11 @@ export default function CheckoutPage() {
           <div className="pt-4 border-t border-white/[0.08] space-y-2.5 text-sm">
             <div className="flex items-center justify-between text-zinc-400">
               <span>{t.cart.subtotal}</span>
-              <span className="tabular-nums text-zinc-200">{formatTnd(cartSubtotal, lang)}</span>
+              <span className="tabular-nums text-white">{formatTnd(cartSubtotal, lang)}</span>
             </div>
             <div className="flex items-center justify-between text-zinc-400">
               <span>{t.cart.shipping}</span>
-              <span className="tabular-nums text-zinc-200">
+              <span className="tabular-nums text-white">
                 {cartShippingFee === 0 ? t.cart.shippingFree : formatTnd(cartShippingFee, lang)}
               </span>
             </div>

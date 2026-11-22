@@ -62,8 +62,8 @@ export default function OrderConfirmationPage() {
   const whatsappClean = (settings.contact_whatsapp || '21652088950').replace(/[^\d]/g, '');
 
   return (
-    <div className="min-h-screen pt-32 sm:pt-36 pb-20 max-w-3xl mx-auto px-4 sm:px-6">
-      <div className="glass-panel rounded-3xl p-6 sm:p-10 space-y-8">
+    <div className="min-h-screen pt-24 sm:pt-36 pb-20 max-w-3xl mx-auto px-3.5 sm:px-6">
+      <div className="glass-panel rounded-3xl p-5 sm:p-10 space-y-7 sm:space-y-8">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/[0.08]">
           <div className="flex items-start gap-3.5">
             <CheckCircle2 className="w-7 h-7 text-emerald-400 shrink-0 mt-0.5" />
@@ -154,11 +154,11 @@ export default function OrderConfirmationPage() {
         <div className="pt-4 border-t border-white/[0.08] space-y-2 text-sm">
           <div className="flex justify-between text-zinc-400">
             <span>{t.cart.subtotal}</span>
-            <span className="tabular-nums text-zinc-200">{formatTnd(order.subtotal, lang)}</span>
+            <span className="tabular-nums text-white">{formatTnd(order.subtotal, lang)}</span>
           </div>
           <div className="flex justify-between text-zinc-400">
             <span>{t.cart.shipping}</span>
-            <span className="tabular-nums text-zinc-200">
+            <span className="tabular-nums text-white">
               {order.shipping_fee === 0 ? t.cart.shippingFree : formatTnd(order.shipping_fee, lang)}
             </span>
           </div>
@@ -180,7 +180,7 @@ export default function OrderConfirmationPage() {
             href={`https://wa.me/${whatsappClean}?text=${encodeURIComponent(`Bonjour maxPro, suivi commande ${order.order_number}`)}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="min-h-[46px] px-6 rounded-xl border border-white/15 text-zinc-200 hover:bg-white/[0.06] transition-colors text-sm font-medium inline-flex items-center justify-center gap-2"
+            className="min-h-[46px] px-6 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-white transition-colors text-sm font-medium inline-flex items-center justify-center gap-2"
           >
             <MessageCircle className="w-4 h-4" />
             <span>{t.home.whatsappCta}</span>

@@ -28,7 +28,7 @@ function ScrollToTop() {
 function PageLoader() {
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="w-8 h-8 rounded-full border-2 border-white/20 border-t-white animate-spin" />
+      <div className="w-8 h-8 rounded-full border-2 border-white/15 border-t-white animate-spin" />
     </div>
   );
 }
@@ -38,7 +38,7 @@ export default function App() {
     <BrowserRouter>
       <StoreProvider>
         <ScrollToTop />
-        <div className="min-h-screen flex flex-col bg-[#060709] text-zinc-100">
+        <div className="min-h-screen flex flex-col bg-[#06070a] text-zinc-100">
           <Navbar />
           <CartDrawer />
           <main className="flex-1">

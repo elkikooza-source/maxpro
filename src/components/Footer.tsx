@@ -9,9 +9,9 @@ export function Footer() {
   const whatsappClean = (settings.contact_whatsapp || '21652088950').replace(/[^\d]/g, '');
 
   return (
-    <footer className="border-t border-white/[0.08] bg-[#050608] mt-24">
+    <footer className="border-t border-white/[0.07] bg-black mt-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-14 sm:py-16">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-10 pb-12 border-b border-white/[0.07]">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-10 pb-12 border-b border-white/[0.06]">
           <div className="md:col-span-5 space-y-4">
             <BrandLockup size="lg" />
             <p className="text-sm text-zinc-400 max-w-sm leading-relaxed">
@@ -55,7 +55,7 @@ export function Footer() {
             </h4>
             <ul className="space-y-2.5 text-sm text-zinc-300">
               <li className="flex items-center gap-2.5">
-                <MapPin className="w-4 h-4 text-zinc-500 shrink-0" />
+                <MapPin className="w-4 h-4 text-zinc-400 shrink-0" />
                 <span>{locationLabel}</span>
               </li>
               <li>
@@ -63,7 +63,7 @@ export function Footer() {
                   href={`mailto:${settings.contact_email}`}
                   className="flex items-center gap-2.5 hover:text-white transition-colors"
                 >
-                  <Mail className="w-4 h-4 text-zinc-500 shrink-0" />
+                  <Mail className="w-4 h-4 text-zinc-400 shrink-0" />
                   <span dir="ltr">{settings.contact_email}</span>
                 </a>
               </li>
@@ -72,7 +72,7 @@ export function Footer() {
                   href={`tel:${settings.contact_phone.replace(/\s+/g, '')}`}
                   className="flex items-center gap-2.5 hover:text-white transition-colors"
                 >
-                  <Phone className="w-4 h-4 text-zinc-500 shrink-0" />
+                  <Phone className="w-4 h-4 text-zinc-400 shrink-0" />
                   <span dir="ltr">{settings.contact_phone}</span>
                 </a>
               </li>
@@ -81,9 +81,9 @@ export function Footer() {
                   href={`https://wa.me/${whatsappClean}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-zinc-200 hover:text-white transition-colors pt-1"
+                  className="inline-flex items-center gap-2 text-white hover:text-zinc-300 transition-colors pt-1"
                 >
-                  <MessageCircle className="w-4 h-4 text-zinc-400 shrink-0" />
+                  <MessageCircle className="w-4 h-4 shrink-0" />
                   <span>{t.home.whatsappCta}</span>
                 </a>
               </li>
@@ -99,7 +99,7 @@ export function Footer() {
           <button
             type="button"
             onClick={toggleLang}
-            className="min-h-[36px] px-3.5 rounded-lg border border-white/10 text-zinc-300 hover:text-white hover:bg-white/[0.04] transition-colors cursor-pointer"
+            className="min-h-[36px] px-3.5 rounded-lg border border-white/10 text-zinc-300 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
           >
             {lang === 'fr' ? 'Passer en عربي' : 'Passer en Français (FR)'}
           </button>

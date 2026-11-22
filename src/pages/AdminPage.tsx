@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Check,
-  Copy,
   Database,
   Edit3,
+  KeyRound,
   Loader2,
   Lock,
   LogOut,
@@ -30,15 +30,16 @@ import {
 } from '../types/store';
 import { SafeImage } from '../components/SafeImage';
 
-type AdminTab = 'overview' | 'products' | 'orders' | 'customization';
+type AdminTab = 'overview' | 'products' | 'orders' | 'customization' | 'security';
 
 interface AuthStatus {
   needsSetup: boolean;
   envManaged: boolean;
+  requiresSetupKey: boolean;
   authenticated: boolean;
-  locked: boolean;
-  remainingSeconds: number;
-  attemptsRemaining: number;
+  username?: string;
+  locked?: boolean;
+  remainingSeconds?: number;
 }
 
 async function readFileAsBase64(file: File): Promise<string> {
@@ -82,13 +83,14 @@ function formatCountdown(totalSeconds: number): string {
 }
 
 export default function AdminPage() {
-  const { lang, t, adminToken, setAdminToken, refreshStorefront } = useStore();
+  const { lang, t, refreshStorefront } = useStore();
 
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [statusError, setStatusError] = useState('');
-  const [username, setUsername] = useState('admin');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [setupKey, setSetupKey] = useState('');
   const [authError, setAuthError] = useState('');
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
@@ -120,29 +122,31 @@ export default function AdminPage() {
 
   const [savingSettings, setSavingSettings] = useState(false);
   const [testingSupabase, setTestingSupabase] = useState(false);
-  const [sqlCopied, setSqlCopied] = useState(false);
+
+  const [pwCurrent, setPwCurrent] = useState('');
+  const [pwNext, setPwNext] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [pwNewUsername, setPwNewUsername] = useState('');
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwError, setPwError] = useState('');
 
   const showToast = useCallback((type: 'ok' | 'err', text: string) => {
     setToast({ type, text });
     setTimeout(() => setToast(null), 3500);
   }, []);
 
-  const authFetch = useCallback(
-    async (url: string, init: RequestInit = {}) => {
-      const headers = new Headers(init.headers || {});
-      if (adminToken) headers.set('Authorization', `Bearer ${adminToken}`);
-      if (!headers.has('Content-Type') && init.body) {
-        headers.set('Content-Type', 'application/json');
-      }
-      const res = await fetch(url, { ...init, headers, credentials: 'include' });
-      if (res.status === 401) {
-        setAdminToken(null);
-        setAuthStatus((prev) => (prev ? { ...prev, authenticated: false } : prev));
-      }
-      return res;
-    },
-    [adminToken, setAdminToken]
-  );
+  const authFetch = useCallback(async (url: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers || {});
+    headers.set('X-Requested-With', 'maxpro-admin');
+    if (!headers.has('Content-Type') && init.body) {
+      headers.set('Content-Type', 'application/json');
+    }
+    const res = await fetch(url, { ...init, headers, credentials: 'include' });
+    if (res.status === 401) {
+      setAuthStatus((prev) => (prev ? { ...prev, authenticated: false } : prev));
+    }
+    return res;
+  }, []);
 
   const loadAuthStatus = useCallback(async () => {
     setStatusError('');
@@ -152,8 +156,10 @@ export default function AdminPage() {
         const data = (await res.json()) as AuthStatus;
         setAuthStatus((prev) => ({
           ...data,
-          authenticated: Boolean(adminToken) || data.authenticated,
+          authenticated: Boolean(data.authenticated),
           needsSetup: prev?.needsSetup === false ? false : data.needsSetup,
+          locked: false,
+          remainingSeconds: 0,
         }));
       } else {
         setStatusError('Impossible de vérifier le statut de connexion administrateur.');
@@ -163,32 +169,31 @@ export default function AdminPage() {
     } finally {
       setAuthLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     void loadAuthStatus();
   }, [loadAuthStatus]);
 
-  // Live 1s countdown when IP is banned
+  // Live 1s countdown when scoped backoff cooldown is active
   useEffect(() => {
-    if (!authStatus?.locked || authStatus.remainingSeconds <= 0) return;
+    const rem = authStatus?.remainingSeconds || 0;
+    if (!authStatus?.locked || rem <= 0) return;
     const timer = setInterval(() => {
       setAuthStatus((prev) => {
         if (!prev || !prev.locked) return prev;
-        const nextSec = prev.remainingSeconds - 1;
+        const nextSec = (prev.remainingSeconds || 0) - 1;
         if (nextSec <= 0) {
-          void loadAuthStatus();
-          return { ...prev, locked: false, remainingSeconds: 0, attemptsRemaining: 3 };
+          return { ...prev, locked: false, remainingSeconds: 0 };
         }
         return { ...prev, remainingSeconds: nextSec };
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [authStatus?.locked, authStatus?.remainingSeconds, loadAuthStatus]);
+  }, [authStatus?.locked, authStatus?.remainingSeconds]);
 
   const loadAdminData = useCallback(async () => {
-    if (!adminToken && !authStatus?.authenticated) return;
+    if (!authStatus?.authenticated) return;
     setDataLoading(true);
     try {
       const [ovRes, prRes, orRes, caRes, seRes] = await Promise.all([
@@ -206,39 +211,56 @@ export default function AdminPage() {
     } finally {
       setDataLoading(false);
     }
-  }, [adminToken, authStatus?.authenticated, authFetch]);
+  }, [authStatus?.authenticated, authFetch]);
 
   useEffect(() => {
-    if (authStatus?.authenticated || adminToken) {
+    if (authStatus?.authenticated) {
+      if (authStatus.username) {
+        setPwNewUsername((prev) => prev || authStatus.username || '');
+      }
       void loadAdminData();
     }
-  }, [adminToken, authStatus?.authenticated, loadAdminData]);
+  }, [authStatus?.authenticated, authStatus?.username, loadAdminData]);
 
   const handleSetup = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
-    if (username.trim().length < 2) {
-      setAuthError('L’identifiant doit contenir au moins 2 caractères.');
+    if (username.trim().length < 3) {
+      setAuthError('L’identifiant doit contenir au moins 3 caractères.');
       return;
     }
-    if (password.length < 6) {
-      setAuthError('Le mot de passe doit contenir au moins 6 caractères.');
+    if (password.length < 12) {
+      setAuthError('Le mot de passe doit contenir au moins 12 caractères.');
+      return;
+    }
+    if (authStatus?.requiresSetupKey && !setupKey.trim()) {
+      setAuthError('La clé de configuration serveur est requise.');
       return;
     }
     setAuthSubmitting(true);
     try {
       let res = await fetch('/api/admin/auth/setup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'maxpro-admin',
+        },
         credentials: 'include',
-        body: JSON.stringify({ username: username.trim(), password }),
+        body: JSON.stringify({
+          username: username.trim(),
+          password,
+          ...(setupKey.trim() ? { setupKey: setupKey.trim() } : {}),
+        }),
       });
 
-      // If already configured (e.g. claimed concurrently or in DB), automatically attempt login
+      // If already claimed concurrently or in DB, fall back to verifying against existing login
       if (res.status === 409) {
         res = await fetch('/api/admin/auth/login', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'maxpro-admin',
+          },
           credentials: 'include',
           body: JSON.stringify({ username: username.trim(), password }),
         });
@@ -253,21 +275,20 @@ export default function AdminPage() {
                 ...prev,
                 locked: Boolean(data.locked),
                 remainingSeconds: Number(data.remainingSeconds || 0),
-                attemptsRemaining: Number(data.attemptsRemaining ?? prev.attemptsRemaining),
               }
             : prev
         );
         return;
       }
-      setAdminToken(data.token);
       setPassword('');
+      setSetupKey('');
       setAuthStatus({
         needsSetup: false,
         envManaged: false,
+        requiresSetupKey: Boolean(authStatus?.requiresSetupKey),
         authenticated: true,
         locked: false,
         remainingSeconds: 0,
-        attemptsRemaining: 3,
       });
     } catch {
       setAuthError('Erreur réseau.');
@@ -283,7 +304,10 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/admin/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'maxpro-admin',
+        },
         credentials: 'include',
         body: JSON.stringify({ username: username.trim(), password }),
       });
@@ -296,21 +320,19 @@ export default function AdminPage() {
                 ...prev,
                 locked: Boolean(data.locked),
                 remainingSeconds: Number(data.remainingSeconds || 0),
-                attemptsRemaining: Number(data.attemptsRemaining ?? prev.attemptsRemaining),
               }
             : prev
         );
         return;
       }
-      setAdminToken(data.token);
       setPassword('');
       setAuthStatus({
         needsSetup: false,
         envManaged: Boolean(authStatus?.envManaged),
+        requiresSetupKey: Boolean(authStatus?.requiresSetupKey),
         authenticated: true,
         locked: false,
         remainingSeconds: 0,
-        attemptsRemaining: 3,
       });
     } catch {
       setAuthError('Erreur réseau.');
@@ -321,11 +343,14 @@ export default function AdminPage() {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/admin/auth/logout', { method: 'POST', credentials: 'include' });
+      await fetch('/api/admin/auth/logout', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'maxpro-admin' },
+        credentials: 'include',
+      });
     } catch {
       // Clear local state regardless
     }
-    setAdminToken(null);
     setAuthStatus((prev) => (prev ? { ...prev, authenticated: false } : prev));
   };
 
@@ -525,135 +550,6 @@ export default function AdminPage() {
     }
   };
 
-  const supabaseFixSql = `DROP TABLE IF EXISTS public.order_items, public.orders, public.products, public.categories, public.site_settings, public.admin_auth, public.admin_login_attempts CASCADE;
-
-CREATE TABLE public.categories (
-  id TEXT PRIMARY KEY,
-  slug TEXT UNIQUE NOT NULL,
-  name_fr TEXT NOT NULL,
-  name_ar TEXT NOT NULL,
-  description_fr TEXT DEFAULT '',
-  description_ar TEXT DEFAULT '',
-  image_url TEXT DEFAULT '',
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE public.products (
-  id TEXT PRIMARY KEY,
-  slug TEXT UNIQUE NOT NULL,
-  category_slug TEXT NOT NULL REFERENCES public.categories(slug) ON UPDATE CASCADE,
-  name_fr TEXT NOT NULL,
-  name_ar TEXT NOT NULL,
-  short_desc_fr TEXT DEFAULT '',
-  short_desc_ar TEXT DEFAULT '',
-  description_fr TEXT DEFAULT '',
-  description_ar TEXT DEFAULT '',
-  price NUMERIC(10, 2) NOT NULL CHECK (price >= 0),
-  sale_price NUMERIC(10, 2) NULL CHECK (sale_price IS NULL OR sale_price >= 0),
-  stock INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
-  images JSONB NOT NULL DEFAULT '[]'::jsonb,
-  variations JSONB NOT NULL DEFAULT '[]'::jsonb,
-  is_visible BOOLEAN NOT NULL DEFAULT TRUE,
-  is_featured BOOLEAN NOT NULL DEFAULT FALSE,
-  is_bestseller BOOLEAN NOT NULL DEFAULT FALSE,
-  is_new_arrival BOOLEAN NOT NULL DEFAULT FALSE,
-  sales_count INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE public.orders (
-  id TEXT PRIMARY KEY,
-  order_number TEXT UNIQUE NOT NULL,
-  customer_name TEXT NOT NULL,
-  customer_phone TEXT NOT NULL,
-  city TEXT NOT NULL,
-  address TEXT NOT NULL,
-  note TEXT DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'En attente',
-  subtotal NUMERIC(10, 2) NOT NULL CHECK (subtotal >= 0),
-  shipping_fee NUMERIC(10, 2) NOT NULL DEFAULT 0 CHECK (shipping_fee >= 0),
-  total NUMERIC(10, 2) NOT NULL CHECK (total >= 0),
-  payment_method TEXT NOT NULL DEFAULT 'COD',
-  language TEXT NOT NULL DEFAULT 'fr',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE public.order_items (
-  id TEXT PRIMARY KEY,
-  order_id TEXT NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
-  product_id TEXT NOT NULL,
-  product_slug TEXT NOT NULL,
-  product_name_fr TEXT NOT NULL,
-  product_name_ar TEXT NOT NULL,
-  variation_label_fr TEXT DEFAULT '',
-  variation_label_ar TEXT DEFAULT '',
-  unit_price NUMERIC(10, 2) NOT NULL CHECK (unit_price >= 0),
-  quantity INTEGER NOT NULL CHECK (quantity > 0),
-  line_total NUMERIC(10, 2) NOT NULL CHECK (line_total >= 0)
-);
-
-CREATE TABLE public.site_settings (
-  key TEXT PRIMARY KEY,
-  value JSONB NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE public.admin_auth (
-  id TEXT PRIMARY KEY,
-  username TEXT NOT NULL DEFAULT 'admin',
-  password_hash TEXT NOT NULL,
-  password_salt TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE public.admin_login_attempts (
-  ip TEXT PRIMARY KEY,
-  attempts INTEGER NOT NULL DEFAULT 0,
-  locked_until TIMESTAMPTZ NULL,
-  last_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.order_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.site_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.admin_auth ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.admin_login_attempts ENABLE ROW LEVEL SECURITY;
-
-GRANT USAGE ON SCHEMA public TO service_role;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
-
-DO $$
-DECLARE tbl TEXT;
-BEGIN
-  FOR tbl IN SELECT unnest(ARRAY['categories','products','orders','order_items','site_settings','admin_auth','admin_login_attempts'])
-  LOOP
-    EXECUTE format('DROP POLICY IF EXISTS "service_role_full_access" ON public.%I;', tbl);
-    EXECUTE format('CREATE POLICY "service_role_full_access" ON public.%I FOR ALL TO service_role USING (true) WITH CHECK (true);', tbl);
-  END LOOP;
-END $$;
-
-NOTIFY pgrst, 'reload schema';`;
-
-  const handleCopySql = async () => {
-    try {
-      await navigator.clipboard.writeText(supabaseFixSql);
-      setSqlCopied(true);
-      showToast('ok', 'Script SQL copié dans le presse-papiers.');
-      setTimeout(() => setSqlCopied(false), 2500);
-    } catch {
-      showToast('err', 'Copie impossible — sélectionnez le bloc SQL manuellement.');
-    }
-  };
 
   const handleTestSupabase = async () => {
     setTestingSupabase(true);
@@ -668,6 +564,56 @@ NOTIFY pgrst, 'reload schema';`;
       await loadAdminData();
     } finally {
       setTestingSupabase(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwError('');
+    if (!pwCurrent) {
+      setPwError('Veuillez saisir votre mot de passe actuel.');
+      return;
+    }
+    if (pwNext.length < 12) {
+      setPwError('Le nouveau mot de passe doit contenir au moins 12 caractères.');
+      return;
+    }
+    if (pwNext !== pwConfirm) {
+      setPwError('Les deux nouveaux mots de passe ne correspondent pas.');
+      return;
+    }
+    if (pwNewUsername.trim() && pwNewUsername.trim().length < 3) {
+      setPwError('L’identifiant doit contenir au moins 3 caractères.');
+      return;
+    }
+
+    setPwSaving(true);
+    try {
+      const res = await authFetch('/api/admin/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          currentPassword: pwCurrent,
+          newPassword: pwNext,
+          ...(pwNewUsername.trim() ? { newUsername: pwNewUsername.trim() } : {}),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setPwError(json?.error || 'Impossible de modifier le mot de passe.');
+        return;
+      }
+      setPwCurrent('');
+      setPwNext('');
+      setPwConfirm('');
+      if (json?.username) {
+        setPwNewUsername(String(json.username));
+        setAuthStatus((prev) => (prev ? { ...prev, username: String(json.username) } : prev));
+      }
+      showToast('ok', 'Mot de passe administrateur mis à jour.');
+    } catch {
+      setPwError('Erreur réseau lors de la mise à jour.');
+    } finally {
+      setPwSaving(false);
     }
   };
 
@@ -705,10 +651,10 @@ NOTIFY pgrst, 'reload schema';`;
   }
 
   // Hardened Lock Screen / Setup / Login Gate
-  if (!authStatus?.authenticated && !adminToken) {
+  if (!authStatus?.authenticated) {
     return (
-      <div className="min-h-screen pt-36 pb-20 px-4 flex items-center justify-center">
-        <div className="w-full max-w-md glass-panel rounded-3xl p-6 sm:p-8 space-y-6">
+      <div className="min-h-screen pt-24 sm:pt-36 pb-16 px-4 flex items-center justify-center">
+        <div className="w-full max-w-md glass-panel rounded-3xl p-5 sm:p-8 space-y-6">
           {statusError ? (
             <div className="space-y-4 text-center py-2">
               <p className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-200">
@@ -733,20 +679,20 @@ NOTIFY pgrst, 'reload schema';`;
               <p className="text-sm text-zinc-400">{t.admin.lockedSubtitle}</p>
               <div className="py-4 rounded-2xl bg-black/40 border border-white/10">
                 <span dir="ltr" className="font-mono text-3xl font-semibold text-white tabular-nums">
-                  {formatCountdown(authStatus.remainingSeconds)}
+                  {formatCountdown(authStatus.remainingSeconds || 0)}
                 </span>
               </div>
             </div>
           ) : authStatus?.needsSetup ? (
-            <form onSubmit={handleSetup} className="space-y-5">
+            <form onSubmit={handleSetup} className="space-y-4 sm:space-y-5">
               <div className="space-y-2">
                 <div className="w-10 h-10 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-white mb-3">
                   <Lock className="w-5 h-5" />
                 </div>
-                <h1 className="font-display text-2xl font-semibold text-white">
+                <h1 className="font-display text-xl sm:text-2xl font-semibold text-white">
                   {t.admin.setupTitle}
                 </h1>
-                <p className="text-sm text-zinc-400">{t.admin.setupSubtitle}</p>
+                <p className="text-xs sm:text-sm text-zinc-400">{t.admin.setupSubtitle}</p>
               </div>
 
               {authError && (
@@ -755,29 +701,50 @@ NOTIFY pgrst, 'reload schema';`;
                 </p>
               )}
 
+              {authStatus.requiresSetupKey && (
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-zinc-300">
+                    Clé d’initialisation (ADMIN_SETUP_KEY)
+                  </span>
+                  <input
+                    type="password"
+                    required
+                    autoComplete="one-time-code"
+                    value={setupKey}
+                    onChange={(e) => setSetupKey(e.target.value)}
+                    placeholder="Clé secrète configurée sur le serveur"
+                    className="w-full min-h-[44px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
+                  />
+                </label>
+              )}
+
               <label className="block space-y-1.5">
                 <span className="text-xs font-medium text-zinc-300">{t.admin.usernameLabel}</span>
                 <input
                   type="text"
                   required
-                  minLength={2}
+                  minLength={3}
                   autoComplete="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/45 border border-white/10 text-sm text-white focus:outline-none focus:border-white/35"
+                  placeholder="Identifiant administrateur"
+                  className="w-full min-h-[44px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
                 />
               </label>
 
               <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-zinc-300">{t.admin.passwordLabel}</span>
+                <span className="text-xs font-medium text-zinc-300">
+                  {t.admin.passwordLabel} (12 caractères minimum)
+                </span>
                 <input
                   type="password"
                   required
-                  minLength={6}
+                  minLength={12}
                   autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/45 border border-white/10 text-sm text-white focus:outline-none focus:border-white/35"
+                  placeholder="Minimum 12 caractères"
+                  className="w-full min-h-[44px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
                 />
               </label>
 
@@ -786,19 +753,19 @@ NOTIFY pgrst, 'reload schema';`;
                 disabled={authSubmitting}
                 className="w-full min-h-[46px] rounded-xl bg-white text-zinc-950 hover:bg-zinc-200 font-semibold text-sm transition-colors cursor-pointer"
               >
-                {authSubmitting ? '...' : t.admin.loginBtn}
+                {authSubmitting ? '...' : t.admin.createPasswordBtn}
               </button>
             </form>
           ) : (
-            <form onSubmit={handleLogin} className="space-y-5">
+            <form onSubmit={handleLogin} className="space-y-4 sm:space-y-5">
               <div className="space-y-2">
                 <div className="w-10 h-10 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-white mb-3">
                   <Lock className="w-5 h-5" />
                 </div>
-                <h1 className="font-display text-2xl font-semibold text-white">
+                <h1 className="font-display text-xl sm:text-2xl font-semibold text-white">
                   {t.admin.loginTitle}
                 </h1>
-                <p className="text-sm text-zinc-400">{t.admin.loginSubtitle}</p>
+                <p className="text-xs sm:text-sm text-zinc-400">{t.admin.loginSubtitle}</p>
               </div>
 
               {authError && (
@@ -815,7 +782,8 @@ NOTIFY pgrst, 'reload schema';`;
                   autoComplete="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/45 border border-white/10 text-sm text-white focus:outline-none focus:border-white/35"
+                  placeholder="Identifiant"
+                  className="w-full min-h-[44px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
                 />
               </label>
 
@@ -827,13 +795,10 @@ NOTIFY pgrst, 'reload schema';`;
                   autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/45 border border-white/10 text-sm text-white focus:outline-none focus:border-white/35"
+                  placeholder="••••••••"
+                  className="w-full min-h-[44px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
                 />
               </label>
-
-              <p className="text-xs text-zinc-500 tabular-nums">
-                {authStatus?.attemptsRemaining ?? 3} {t.admin.attemptsLeft}
-              </p>
 
               <button
                 type="submit"
@@ -850,12 +815,12 @@ NOTIFY pgrst, 'reload schema';`;
   }
 
   return (
-    <div className="min-h-screen pt-36 sm:pt-40 pb-20 max-w-7xl mx-auto px-4 sm:px-6 space-y-8">
+    <div className="min-h-screen pt-24 sm:pt-36 pb-20 max-w-7xl mx-auto px-3.5 sm:px-6 space-y-6 sm:space-y-8">
       {toast && (
         <div
-          className={`fixed bottom-5 end-5 z-50 px-4 py-3 rounded-xl border text-xs sm:text-sm font-medium shadow-xl backdrop-blur-xl ${
+          className={`fixed bottom-4 inset-x-4 sm:inset-x-auto sm:bottom-5 sm:end-5 z-50 px-4 py-3 rounded-xl border text-xs sm:text-sm font-medium shadow-xl backdrop-blur-xl ${
             toast.type === 'ok'
-              ? 'bg-zinc-900/95 border-white/20 text-white'
+              ? 'bg-zinc-900/95 border-white/15 text-white'
               : 'bg-red-950/95 border-red-500/40 text-red-100'
           }`}
         >
@@ -864,7 +829,7 @@ NOTIFY pgrst, 'reload schema';`;
       )}
 
       {/* Admin Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/[0.08]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 sm:pb-6 border-b border-white/[0.08]">
         <div>
           <h1 className="font-display text-2xl sm:text-3xl font-semibold text-white">
             {t.admin.title}
@@ -907,7 +872,7 @@ NOTIFY pgrst, 'reload schema';`;
               </p>
               <p className="text-xs text-amber-200/80">
                 {overview.supabase_error ||
-                  'Ajoutez SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY et exécutez supabase/schema.sql dans Supabase SQL Editor pour persister vos produits et commandes.'}
+                  'Configurez SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY puis exécutez supabase/schema.sql dans Supabase SQL Editor.'}
               </p>
             </div>
           </div>
@@ -917,23 +882,9 @@ NOTIFY pgrst, 'reload schema';`;
               type="button"
               onClick={() => void handleTestSupabase()}
               disabled={testingSupabase}
-              className="min-h-[36px] px-3.5 rounded-xl bg-amber-300 text-zinc-950 text-xs font-semibold hover:bg-amber-200 transition-colors cursor-pointer whitespace-nowrap"
+              className="min-h-[38px] px-3.5 rounded-xl bg-amber-300 text-zinc-950 text-xs font-semibold hover:bg-amber-200 transition-colors cursor-pointer whitespace-nowrap"
             >
               {testingSupabase ? 'Test...' : 'Tester Supabase'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('customization');
-                setTimeout(() => {
-                  document
-                    .getElementById('supabase-sql-helper')
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }, 80);
-              }}
-              className="min-h-[36px] px-3.5 rounded-xl border border-amber-400/30 text-xs font-medium text-amber-100 hover:bg-amber-500/15 transition-colors cursor-pointer whitespace-nowrap"
-            >
-              Voir l’aide SQL
             </button>
           </div>
         </div>
@@ -947,6 +898,7 @@ NOTIFY pgrst, 'reload schema';`;
             { id: 'products', label: `${t.admin.tabProducts} (${products.length})` },
             { id: 'orders', label: `${t.admin.tabOrders} (${orders.length})` },
             { id: 'customization', label: t.admin.tabCustomization },
+            { id: 'security', label: 'Sécurité' },
           ] as Array<{ id: AdminTab; label: string }>
         ).map((tab) => (
           <button
@@ -955,7 +907,7 @@ NOTIFY pgrst, 'reload schema';`;
             onClick={() => setActiveTab(tab.id)}
             className={`min-h-[42px] px-4 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
               activeTab === tab.id
-                ? 'bg-white text-zinc-950'
+                ? 'bg-white text-zinc-950 font-semibold'
                 : 'glass-surface text-zinc-300 hover:text-white'
             }`}
           >
@@ -1053,13 +1005,13 @@ NOTIFY pgrst, 'reload schema';`;
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 text-zinc-500 absolute start-3.5 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-zinc-400 absolute start-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={productSearch}
                 onChange={(e) => setProductSearch(e.target.value)}
                 placeholder="Rechercher un produit..."
-                className="w-full min-h-[42px] ps-10 pe-4 rounded-xl bg-black/40 border border-white/10 text-sm text-white focus:outline-none focus:border-white/30"
+                className="w-full min-h-[44px] ps-10 pe-4 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
               />
             </div>
 
@@ -1194,13 +1146,13 @@ NOTIFY pgrst, 'reload schema';`;
         <div className="space-y-6">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 text-zinc-500 absolute start-3.5 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-zinc-400 absolute start-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={orderSearch}
                 onChange={(e) => setOrderSearch(e.target.value)}
                 placeholder="Rechercher MXP-XXXXXX, client, téléphone, ville..."
-                className="w-full min-h-[42px] ps-10 pe-4 rounded-xl bg-black/40 border border-white/10 text-sm text-white focus:outline-none focus:border-white/30"
+                className="w-full min-h-[44px] ps-10 pe-4 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
               />
             </div>
 
@@ -1210,7 +1162,7 @@ NOTIFY pgrst, 'reload schema';`;
                 onClick={() => setOrderStatusFilter('all')}
                 className={`min-h-[36px] px-3 rounded-lg text-xs font-medium whitespace-nowrap cursor-pointer ${
                   orderStatusFilter === 'all'
-                    ? 'bg-white text-zinc-950'
+                    ? 'bg-white text-zinc-950 font-semibold'
                     : 'bg-white/[0.05] text-zinc-300'
                 }`}
               >
@@ -1330,7 +1282,7 @@ NOTIFY pgrst, 'reload schema';`;
                 return (
                   <div
                     key={ord.id}
-                    className={`glass-surface rounded-2xl p-5 space-y-4 transition-colors ${
+                    className={`glass-surface rounded-2xl p-4 sm:p-5 space-y-4 transition-colors ${
                       isSelected ? 'border-white/35 bg-white/[0.04]' : ''
                     }`}
                   >
@@ -1483,32 +1435,13 @@ NOTIFY pgrst, 'reload schema';`;
           </div>
 
           {overview?.storage_mode !== 'supabase' && (
-            <div
-              id="supabase-sql-helper"
-              className="glass-surface rounded-2xl p-6 space-y-4 border border-amber-500/25"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold text-white">
-                  Activer Supabase PostgreSQL (à exécuter dans Supabase → SQL Editor)
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => void handleCopySql()}
-                  className="min-h-[36px] px-3.5 rounded-xl bg-white text-zinc-950 hover:bg-zinc-200 text-xs font-semibold inline-flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
-                >
-                  {sqlCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{sqlCopied ? 'Copié' : 'Copier le SQL'}</span>
-                </button>
-              </div>
+            <div className="glass-surface rounded-2xl p-5 sm:p-6 space-y-2 border border-amber-500/25">
+              <h3 className="text-sm font-semibold text-white">
+                Configuration Base de données Supabase
+              </h3>
               <p className="text-xs text-zinc-400 leading-relaxed">
-                Vos tables existent déjà dans <strong className="text-zinc-200">Table Editor</strong>, mais PostgreSQL refuse encore l’accès au rôle serveur (<code className="text-amber-300">42501</code>). Ouvrez <strong className="text-zinc-200">SQL Editor</strong> (icône <code className="text-zinc-200">&gt;_</code> dans la barre gauche de Supabase) → <strong className="text-zinc-200">New query</strong>, collez ce script et cliquez sur <strong className="text-zinc-200">Run</strong>, puis cliquez sur « Tester la connexion Supabase » ci-dessus :
+                Exécutez le fichier <code className="text-zinc-200">supabase/schema.sql</code> de votre dépôt privé dans l’éditeur SQL de Supabase, puis cliquez sur « Tester la connexion Supabase » ci-dessus.
               </p>
-              <pre
-                dir="ltr"
-                className="p-3.5 rounded-xl bg-black/60 border border-white/10 text-[11px] font-mono text-zinc-200 overflow-x-auto select-all"
-              >
-                {supabaseFixSql}
-              </pre>
             </div>
           )}
 
@@ -1524,7 +1457,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setSettingsDraft({ ...settingsDraft, brand_name: e.target.value })
                   }
-                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/30"
                 />
               </label>
 
@@ -1536,7 +1469,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setSettingsDraft({ ...settingsDraft, brand_tagline: e.target.value })
                   }
-                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/30"
                 />
               </label>
             </div>
@@ -1553,7 +1486,7 @@ NOTIFY pgrst, 'reload schema';`;
                     onChange={(e) =>
                       setSettingsDraft({ ...settingsDraft, logo_url: e.target.value })
                     }
-                    className="flex-1 min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white"
+                    className="flex-1 min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/30"
                   />
                   <label className="min-h-[42px] px-3 rounded-xl border border-white/15 text-xs text-zinc-200 hover:bg-white/[0.06] inline-flex items-center gap-1.5 cursor-pointer shrink-0">
                     <Upload className="w-3.5 h-3.5" />
@@ -1582,7 +1515,7 @@ NOTIFY pgrst, 'reload schema';`;
                     onChange={(e) =>
                       setSettingsDraft({ ...settingsDraft, hero_image: e.target.value })
                     }
-                    className="flex-1 min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white"
+                    className="flex-1 min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/30"
                   />
                   <label className="min-h-[42px] px-3 rounded-xl border border-white/15 text-xs text-zinc-200 hover:bg-white/[0.06] inline-flex items-center gap-1.5 cursor-pointer shrink-0">
                     <Upload className="w-3.5 h-3.5" />
@@ -1612,7 +1545,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setSettingsDraft({ ...settingsDraft, hero_title_fr: e.target.value })
                   }
-                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/30"
                 />
               </label>
               <label className="block space-y-1.5">
@@ -1624,7 +1557,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setSettingsDraft({ ...settingsDraft, hero_title_ar: e.target.value })
                   }
-                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/30"
                 />
               </label>
               <label className="block space-y-1.5">
@@ -1635,7 +1568,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setSettingsDraft({ ...settingsDraft, hero_subtitle_fr: e.target.value })
                   }
-                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/30"
                 />
               </label>
               <label className="block space-y-1.5">
@@ -1647,7 +1580,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setSettingsDraft({ ...settingsDraft, hero_subtitle_ar: e.target.value })
                   }
-                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/30"
                 />
               </label>
             </div>
@@ -1673,7 +1606,7 @@ NOTIFY pgrst, 'reload schema';`;
                     setSettingsDraft({ ...settingsDraft, promo_text_fr: e.target.value })
                   }
                   placeholder="Texte bannière FR"
-                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
                 />
                 <input
                   type="text"
@@ -1683,7 +1616,7 @@ NOTIFY pgrst, 'reload schema';`;
                     setSettingsDraft({ ...settingsDraft, promo_text_ar: e.target.value })
                   }
                   placeholder="نص الإعلان بالعربية"
-                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
                 />
               </div>
             </div>
@@ -1698,7 +1631,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setSettingsDraft({ ...settingsDraft, shipping_fee: Number(e.target.value) })
                   }
-                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white tabular-nums"
+                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white tabular-nums focus:outline-none focus:border-white/30"
                 />
               </label>
 
@@ -1714,7 +1647,7 @@ NOTIFY pgrst, 'reload schema';`;
                       free_shipping_threshold: Number(e.target.value),
                     })
                   }
-                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white tabular-nums"
+                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white tabular-nums focus:outline-none focus:border-white/30"
                 />
               </label>
 
@@ -1726,7 +1659,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setSettingsDraft({ ...settingsDraft, contact_email: e.target.value })
                   }
-                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/30"
                 />
               </label>
 
@@ -1738,7 +1671,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setSettingsDraft({ ...settingsDraft, contact_phone: e.target.value })
                   }
-                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/30"
                 />
               </label>
 
@@ -1750,7 +1683,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setSettingsDraft({ ...settingsDraft, contact_whatsapp: e.target.value })
                   }
-                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/30"
                 />
               </label>
 
@@ -1762,7 +1695,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setSettingsDraft({ ...settingsDraft, contact_location_fr: e.target.value })
                   }
-                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-black/40 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[42px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white focus:outline-none focus:border-white/30"
                 />
               </label>
             </div>
@@ -1833,7 +1766,7 @@ NOTIFY pgrst, 'reload schema';`;
                             prev.map((c) => (c.id === cat.id ? { ...c, name_fr: e.target.value } : c))
                           )
                         }
-                        className="min-h-[36px] px-2.5 rounded-lg bg-black/50 border border-white/10 text-xs text-white"
+                        className="min-h-[36px] px-2.5 rounded-lg bg-white/[0.04] border border-white/10 text-xs text-white"
                       />
                       <input
                         type="text"
@@ -1844,7 +1777,7 @@ NOTIFY pgrst, 'reload schema';`;
                             prev.map((c) => (c.id === cat.id ? { ...c, name_ar: e.target.value } : c))
                           )
                         }
-                        className="min-h-[36px] px-2.5 rounded-lg bg-black/50 border border-white/10 text-xs text-white"
+                        className="min-h-[36px] px-2.5 rounded-lg bg-white/[0.04] border border-white/10 text-xs text-white"
                       />
                     </div>
                   </div>
@@ -1893,6 +1826,116 @@ NOTIFY pgrst, 'reload schema';`;
         </div>
       )}
 
+      {/* TAB 5: SECURITY / PASSWORD CHANGE */}
+      {activeTab === 'security' && (
+        <div className="max-w-xl space-y-6">
+          <div className="glass-surface rounded-2xl p-5 sm:p-7 space-y-5">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-white shrink-0">
+                <KeyRound className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-white">
+                  Identifiant & Mot de passe administrateur
+                </h2>
+                <p className="text-xs sm:text-sm text-zinc-400 mt-1">
+                  Compte connecté :{' '}
+                  <strong className="text-white">{authStatus?.username || 'admin'}</strong>
+                </p>
+              </div>
+            </div>
+
+            {authStatus?.envManaged ? (
+              <div className="p-4 rounded-xl bg-amber-500/15 border border-amber-500/35 text-xs sm:text-sm text-amber-100 leading-relaxed">
+                L’accès administrateur est actuellement piloté par la variable d’environnement{' '}
+                <code className="font-mono">ADMIN_PASSCODE</code> sur le serveur. Pour modifier ce
+                mot de passe, mettez à jour <code className="font-mono">ADMIN_PASSCODE</code> dans
+                vos paramètres de déploiement.
+              </div>
+            ) : (
+              <form onSubmit={handleChangePassword} className="space-y-4">
+                {pwError && (
+                  <p className="p-3 rounded-xl bg-red-500/15 border border-red-500/35 text-xs sm:text-sm text-red-100">
+                    {pwError}
+                  </p>
+                )}
+
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-zinc-300">
+                    Identifiant administrateur (optionnel)
+                  </span>
+                  <input
+                    type="text"
+                    minLength={3}
+                    maxLength={64}
+                    autoComplete="username"
+                    value={pwNewUsername}
+                    onChange={(e) => setPwNewUsername(e.target.value)}
+                    placeholder={authStatus?.username || 'Identifiant'}
+                    className="w-full min-h-[44px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
+                  />
+                </label>
+
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-zinc-300">Mot de passe actuel *</span>
+                  <input
+                    type="password"
+                    required
+                    autoComplete="current-password"
+                    value={pwCurrent}
+                    onChange={(e) => setPwCurrent(e.target.value)}
+                    placeholder="••••••••••••"
+                    className="w-full min-h-[44px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
+                  />
+                </label>
+
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-zinc-300">
+                    Nouveau mot de passe * (12 caractères minimum)
+                  </span>
+                  <input
+                    type="password"
+                    required
+                    minLength={12}
+                    maxLength={128}
+                    autoComplete="new-password"
+                    value={pwNext}
+                    onChange={(e) => setPwNext(e.target.value)}
+                    placeholder="Minimum 12 caractères"
+                    className="w-full min-h-[44px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
+                  />
+                </label>
+
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-zinc-300">
+                    Confirmer le nouveau mot de passe *
+                  </span>
+                  <input
+                    type="password"
+                    required
+                    minLength={12}
+                    maxLength={128}
+                    autoComplete="new-password"
+                    value={pwConfirm}
+                    onChange={(e) => setPwConfirm(e.target.value)}
+                    placeholder="Retapez le nouveau mot de passe"
+                    className="w-full min-h-[44px] px-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/30"
+                  />
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={pwSaving}
+                  className="min-h-[46px] px-6 rounded-xl bg-white text-zinc-950 hover:bg-zinc-200 disabled:opacity-60 font-semibold text-sm transition-colors cursor-pointer"
+                >
+                  {pwSaving ? 'Mise à jour...' : 'Mettre à jour le mot de passe'}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* PRODUCT CREATE / EDIT MODAL */}
       {editingProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1925,7 +1968,7 @@ NOTIFY pgrst, 'reload schema';`;
                   required
                   value={editingProduct.name_fr || ''}
                   onChange={(e) => setEditingProduct({ ...editingProduct, name_fr: e.target.value })}
-                  className="w-full min-h-[40px] px-3 rounded-xl bg-black/45 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[40px] px-3 rounded-xl bg-white/[0.04] border border-white/10 text-sm text-white"
                 />
               </label>
 
@@ -1936,7 +1979,7 @@ NOTIFY pgrst, 'reload schema';`;
                   dir="rtl"
                   value={editingProduct.name_ar || ''}
                   onChange={(e) => setEditingProduct({ ...editingProduct, name_ar: e.target.value })}
-                  className="w-full min-h-[40px] px-3 rounded-xl bg-black/45 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[40px] px-3 rounded-xl bg-white/[0.04] border border-white/10 text-sm text-white"
                 />
               </label>
 
@@ -1947,7 +1990,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setEditingProduct({ ...editingProduct, category_slug: e.target.value })
                   }
-                  className="w-full min-h-[40px] px-3 rounded-xl bg-black/50 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[40px] px-3 rounded-xl bg-zinc-900 border border-white/10 text-base sm:text-sm text-white"
                 >
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.slug}>
@@ -1967,7 +2010,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setEditingProduct({ ...editingProduct, stock: Number(e.target.value) })
                   }
-                  className="w-full min-h-[40px] px-3 rounded-xl bg-black/45 border border-white/10 text-sm text-white tabular-nums"
+                  className="w-full min-h-[40px] px-3 rounded-xl bg-white/[0.04] border border-white/10 text-sm text-white tabular-nums"
                 />
               </label>
 
@@ -1982,7 +2025,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setEditingProduct({ ...editingProduct, price: Number(e.target.value) })
                   }
-                  className="w-full min-h-[40px] px-3 rounded-xl bg-black/45 border border-white/10 text-sm text-white tabular-nums"
+                  className="w-full min-h-[40px] px-3 rounded-xl bg-white/[0.04] border border-white/10 text-sm text-white tabular-nums"
                 />
               </label>
 
@@ -1999,7 +2042,7 @@ NOTIFY pgrst, 'reload schema';`;
                       sale_price: e.target.value === '' ? null : Number(e.target.value),
                     })
                   }
-                  className="w-full min-h-[40px] px-3 rounded-xl bg-black/45 border border-white/10 text-sm text-white tabular-nums"
+                  className="w-full min-h-[40px] px-3 rounded-xl bg-white/[0.04] border border-white/10 text-sm text-white tabular-nums"
                 />
               </label>
             </div>
@@ -2013,7 +2056,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setEditingProduct({ ...editingProduct, short_desc_fr: e.target.value })
                   }
-                  className="w-full min-h-[40px] px-3 rounded-xl bg-black/45 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[40px] px-3 rounded-xl bg-white/[0.04] border border-white/10 text-sm text-white"
                 />
               </label>
               <label className="block space-y-1">
@@ -2025,7 +2068,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setEditingProduct({ ...editingProduct, short_desc_ar: e.target.value })
                   }
-                  className="w-full min-h-[40px] px-3 rounded-xl bg-black/45 border border-white/10 text-sm text-white"
+                  className="w-full min-h-[40px] px-3 rounded-xl bg-white/[0.04] border border-white/10 text-sm text-white"
                 />
               </label>
             </div>
@@ -2039,7 +2082,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setEditingProduct({ ...editingProduct, description_fr: e.target.value })
                   }
-                  className="w-full p-3 rounded-xl bg-black/45 border border-white/10 text-sm text-white"
+                  className="w-full p-3 rounded-xl bg-white/[0.04] border border-white/10 text-sm text-white"
                 />
               </label>
               <label className="block space-y-1">
@@ -2051,7 +2094,7 @@ NOTIFY pgrst, 'reload schema';`;
                   onChange={(e) =>
                     setEditingProduct({ ...editingProduct, description_ar: e.target.value })
                   }
-                  className="w-full p-3 rounded-xl bg-black/45 border border-white/10 text-sm text-white"
+                  className="w-full p-3 rounded-xl bg-white/[0.04] border border-white/10 text-sm text-white"
                 />
               </label>
             </div>
@@ -2092,7 +2135,7 @@ NOTIFY pgrst, 'reload schema';`;
                         next[idx] = e.target.value;
                         setEditingProduct({ ...editingProduct, images: next });
                       }}
-                      className="flex-1 min-h-[36px] px-3 rounded-lg bg-black/45 border border-white/10 text-xs text-zinc-200"
+                      className="flex-1 min-h-[36px] px-3 rounded-lg bg-white/[0.04] border border-white/10 text-xs text-zinc-200"
                     />
                     <button
                       type="button"
@@ -2155,7 +2198,7 @@ NOTIFY pgrst, 'reload schema';`;
                       next[idx] = { ...next[idx], label_fr: e.target.value };
                       setEditingProduct({ ...editingProduct, variations: next });
                     }}
-                    className="col-span-5 min-h-[36px] px-2.5 rounded-lg bg-black/45 border border-white/10 text-xs text-white"
+                    className="col-span-5 min-h-[36px] px-2.5 rounded-lg bg-white/[0.04] border border-white/10 text-xs text-white"
                   />
                   <input
                     type="text"
@@ -2167,7 +2210,7 @@ NOTIFY pgrst, 'reload schema';`;
                       next[idx] = { ...next[idx], label_ar: e.target.value };
                       setEditingProduct({ ...editingProduct, variations: next });
                     }}
-                    className="col-span-4 min-h-[36px] px-2.5 rounded-lg bg-black/45 border border-white/10 text-xs text-white"
+                    className="col-span-4 min-h-[36px] px-2.5 rounded-lg bg-white/[0.04] border border-white/10 text-xs text-white"
                   />
                   <input
                     type="number"
@@ -2178,7 +2221,7 @@ NOTIFY pgrst, 'reload schema';`;
                       next[idx] = { ...next[idx], price_delta: Number(e.target.value) };
                       setEditingProduct({ ...editingProduct, variations: next });
                     }}
-                    className="col-span-2 min-h-[36px] px-2 rounded-lg bg-black/45 border border-white/10 text-xs text-white tabular-nums"
+                    className="col-span-2 min-h-[36px] px-2 rounded-lg bg-white/[0.04] border border-white/10 text-xs text-white tabular-nums"
                   />
                   <button
                     type="button"

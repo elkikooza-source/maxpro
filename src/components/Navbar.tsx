@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, ShoppingBag, X } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
@@ -10,6 +10,10 @@ export function Navbar() {
   const [promoDismissed, setPromoDismissed] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname, location.search]);
 
   const promoText = lang === 'ar' ? settings.promo_text_ar : settings.promo_text_fr;
   const showPromo = settings.promo_enabled && !promoDismissed && Boolean(promoText);
@@ -31,23 +35,23 @@ export function Navbar() {
   return (
     <div className="fixed top-0 inset-x-0 z-40 pointer-events-none">
       {showPromo && (
-        <div className="pointer-events-auto h-8 bg-zinc-950/95 border-b border-white/10 backdrop-blur-md px-3 flex items-center justify-center relative">
-          <p className="text-[11px] sm:text-xs text-zinc-300 truncate max-w-[85%] text-center">
+        <div className="pointer-events-auto h-7 sm:h-8 bg-black/90 border-b border-white/[0.08] backdrop-blur-md px-3 flex items-center justify-center relative">
+          <p className="text-[11px] sm:text-xs text-zinc-200 truncate max-w-[85%] text-center">
             {promoText}
           </p>
           <button
             type="button"
             onClick={() => setPromoDismissed(true)}
             aria-label="Fermer"
-            className="absolute end-2 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-200 transition-colors"
+            className="absolute end-1.5 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-white transition-colors"
           >
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-2.5 sm:pt-3.5">
-        <header className="pointer-events-auto glass-nav rounded-2xl px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-4 sm:gap-8">
+      <div className="max-w-7xl mx-auto px-2.5 sm:px-6 pt-2 sm:pt-3.5">
+        <header className="pointer-events-auto glass-nav rounded-2xl px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-8">
           <Link
             to="/"
             onClick={() => setMobileMenuOpen(false)}
@@ -61,8 +65,8 @@ export function Navbar() {
               to="/"
               className={`whitespace-nowrap shrink-0 py-1 border-b transition-colors duration-150 ${
                 location.pathname === '/'
-                  ? 'text-white border-white/60'
-                  : 'border-transparent hover:text-white hover:border-white/30'
+                  ? 'text-white border-white'
+                  : 'border-transparent hover:text-white hover:border-zinc-500'
               }`}
             >
               {t.nav.home}
@@ -71,8 +75,8 @@ export function Navbar() {
               to="/shop"
               className={`whitespace-nowrap shrink-0 py-1 border-b transition-colors duration-150 ${
                 location.pathname.startsWith('/shop')
-                  ? 'text-white border-white/60'
-                  : 'border-transparent hover:text-white hover:border-white/30'
+                  ? 'text-white border-white'
+                  : 'border-transparent hover:text-white hover:border-zinc-500'
               }`}
             >
               {t.nav.shop}
@@ -80,14 +84,14 @@ export function Navbar() {
             <button
               type="button"
               onClick={() => handleAnchorLink('categories')}
-              className="whitespace-nowrap shrink-0 py-1 border-b border-transparent hover:text-white hover:border-white/30 transition-colors duration-150 cursor-pointer"
+              className="whitespace-nowrap shrink-0 py-1 border-b border-transparent hover:text-white hover:border-zinc-500 transition-colors duration-150 cursor-pointer"
             >
               {t.nav.categories}
             </button>
             <button
               type="button"
               onClick={() => handleAnchorLink('contact')}
-              className="whitespace-nowrap shrink-0 py-1 border-b border-transparent hover:text-white hover:border-white/30 transition-colors duration-150 cursor-pointer"
+              className="whitespace-nowrap shrink-0 py-1 border-b border-transparent hover:text-white hover:border-zinc-500 transition-colors duration-150 cursor-pointer"
             >
               {t.nav.contact}
             </button>
@@ -97,7 +101,7 @@ export function Navbar() {
             <button
               type="button"
               onClick={toggleLang}
-              className="min-h-[40px] px-3 rounded-xl text-xs font-semibold tracking-wide text-zinc-200 hover:text-white bg-white/[0.04] hover:bg-white/[0.09] border border-white/10 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="min-h-[40px] px-3 rounded-xl text-xs font-semibold tracking-wide text-zinc-200 hover:text-white bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
               aria-label="Changer de langue"
             >
               {lang === 'fr' ? 'عربي' : 'FR'}
@@ -117,7 +121,7 @@ export function Navbar() {
             <button
               type="button"
               onClick={() => setMobileMenuOpen((prev) => !prev)}
-              className="md:hidden min-h-[44px] min-w-[44px] rounded-xl bg-white/[0.04] border border-white/10 text-zinc-200 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+              className="md:hidden min-h-[44px] min-w-[44px] rounded-xl bg-white/[0.05] border border-white/10 text-zinc-200 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
               aria-label={t.nav.menu}
               aria-expanded={mobileMenuOpen}
             >
@@ -127,36 +131,43 @@ export function Navbar() {
         </header>
 
         {mobileMenuOpen && (
-          <div className="pointer-events-auto md:hidden mt-2 glass-nav rounded-2xl p-4 flex flex-col gap-1">
-            <Link
-              to="/"
+          <>
+            <div
+              className="pointer-events-auto fixed inset-0 -z-10 bg-black/50 backdrop-blur-[2px] md:hidden"
               onClick={() => setMobileMenuOpen(false)}
-              className="min-h-[44px] px-3 rounded-xl flex items-center text-sm font-medium text-zinc-100 hover:bg-white/[0.06] transition-colors"
-            >
-              {t.nav.home}
-            </Link>
-            <Link
-              to="/shop"
-              onClick={() => setMobileMenuOpen(false)}
-              className="min-h-[44px] px-3 rounded-xl flex items-center text-sm font-medium text-zinc-100 hover:bg-white/[0.06] transition-colors"
-            >
-              {t.nav.shop}
-            </Link>
-            <button
-              type="button"
-              onClick={() => handleAnchorLink('categories')}
-              className="min-h-[44px] px-3 rounded-xl flex items-center text-sm font-medium text-zinc-100 hover:bg-white/[0.06] transition-colors text-start"
-            >
-              {t.nav.categories}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleAnchorLink('contact')}
-              className="min-h-[44px] px-3 rounded-xl flex items-center text-sm font-medium text-zinc-100 hover:bg-white/[0.06] transition-colors text-start"
-            >
-              {t.nav.contact}
-            </button>
-          </div>
+              aria-hidden="true"
+            />
+            <div className="pointer-events-auto md:hidden mt-2 glass-nav rounded-2xl p-3 flex flex-col gap-1">
+              <Link
+                to="/"
+                onClick={() => setMobileMenuOpen(false)}
+                className="min-h-[44px] px-3.5 rounded-xl flex items-center text-sm font-medium text-zinc-100 active:bg-white/[0.08] hover:bg-white/[0.06] transition-colors"
+              >
+                {t.nav.home}
+              </Link>
+              <Link
+                to="/shop"
+                onClick={() => setMobileMenuOpen(false)}
+                className="min-h-[44px] px-3.5 rounded-xl flex items-center text-sm font-medium text-zinc-100 active:bg-white/[0.08] hover:bg-white/[0.06] transition-colors"
+              >
+                {t.nav.shop}
+              </Link>
+              <button
+                type="button"
+                onClick={() => handleAnchorLink('categories')}
+                className="min-h-[44px] px-3.5 rounded-xl flex items-center text-sm font-medium text-zinc-100 active:bg-white/[0.08] hover:bg-white/[0.06] transition-colors text-start"
+              >
+                {t.nav.categories}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAnchorLink('contact')}
+                className="min-h-[44px] px-3.5 rounded-xl flex items-center text-sm font-medium text-zinc-100 active:bg-white/[0.08] hover:bg-white/[0.06] transition-colors text-start"
+              >
+                {t.nav.contact}
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>

@@ -106,14 +106,19 @@ export function verifyAdminToken(token: string | undefined | null): boolean {
 }
 
 export function getClientIp(req: Request): string {
-  const xff = req.headers['x-forwarded-for'];
-  if (typeof xff === 'string' && xff.trim()) {
-    return xff.split(',')[0].trim().slice(0, 64);
+  const vercelIp = req.headers['x-vercel-forwarded-for'];
+  if (typeof vercelIp === 'string' && vercelIp.trim()) {
+    const parts = vercelIp.split(',');
+    return parts[parts.length - 1].trim().slice(0, 64);
   }
-  if (Array.isArray(xff) && xff.length > 0) {
-    return String(xff[0]).split(',')[0].trim().slice(0, 64);
+  const realIp = req.headers['x-real-ip'];
+  if (typeof realIp === 'string' && realIp.trim()) {
+    return realIp.trim().slice(0, 64);
   }
-  return (req.ip || req.socket?.remoteAddress || 'unknown').slice(0, 64);
+  if (req.ip && req.ip.trim()) {
+    return req.ip.trim().slice(0, 64);
+  }
+  return (req.socket?.remoteAddress || 'unknown').slice(0, 64);
 }
 
 // Public order creation rate limiter: max 8 orders per 10 minutes per IP

@@ -143,3 +143,23 @@ export interface AdminOverviewStats {
   supabase_configured: boolean;
   supabase_error?: string;
 }
+
+export interface LiveVisitorSummary {
+  page_label: string;
+  path: string;
+  active_seconds: number;
+}
+
+export interface LivePresenceStats {
+  active_clients: number;
+  by_section: {
+    home: number;
+    shop: number;
+    product: number;
+    checkout: number;
+    other: number;
+  };
+  visitors: LiveVisitorSummary[];
+  updated_at: string;
+}
+

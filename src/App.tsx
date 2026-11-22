@@ -9,6 +9,7 @@ import { StoreProvider } from './context/StoreContext';
 import { Navbar } from './components/Navbar';
 import { CartDrawer } from './components/CartDrawer';
 import { Footer } from './components/Footer';
+import { VisitorPresenceBeacon } from './components/VisitorPresenceBeacon';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
 const ShopPage = lazy(() => import('./pages/ShopPage'));
@@ -38,6 +39,7 @@ export default function App() {
     <BrowserRouter>
       <StoreProvider>
         <ScrollToTop />
+        <VisitorPresenceBeacon />
         <div className="min-h-screen flex flex-col bg-[#06070a] text-zinc-100">
           <Navbar />
           <CartDrawer />

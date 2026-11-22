@@ -4,6 +4,7 @@ import fs from 'fs';
 import type { OrderStatus, Product, ProductVariation, SiteSettings } from '../src/types/store.js';
 import { ORDER_STATUSES } from '../src/types/store.js';
 import { storeDb } from './db.js';
+import { presenceTracker } from './presence.js';
 import {
   checkOrderRateLimit,
   createAdminToken,
@@ -74,6 +75,32 @@ export function createApiApp(): Express {
   // Public Health & Storefront Endpoints
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, mode: storeDb.getStatus().mode });
+  });
+
+  // Public anonymous storefront visitor heartbeat (never returns counts)
+  const parsePresenceBody = (req: Request): { visitorId?: unknown; path?: unknown } => {
+    if (typeof req.body === 'string') {
+      try {
+        const parsed = JSON.parse(req.body);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+    return req.body && typeof req.body === 'object' ? req.body : {};
+  };
+
+  app.post('/api/presence/ping', express.text({ type: 'text/plain', limit: '4kb' }), (req, res) => {
+    const body = parsePresenceBody(req);
+    const ip = getClientIp(req);
+    presenceTracker.ping(body.visitorId, ip, body.path);
+    return res.status(204).end();
+  });
+
+  app.post('/api/presence/leave', express.text({ type: 'text/plain', limit: '4kb' }), (req, res) => {
+    const body = parsePresenceBody(req);
+    presenceTracker.leave(body.visitorId);
+    return res.status(204).end();
   });
 
   app.get('/api/storefront', async (_req, res) => {
@@ -537,6 +564,36 @@ export function createApiApp(): Express {
       console.error('Overview error:', err);
       res.status(500).json({ error: 'Impossible de charger les statistiques.' });
     }
+  });
+
+  app.get('/api/admin/presence', requireAdmin, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(presenceTracker.getSnapshot());
+  });
+
+  app.get('/api/admin/presence/stream', requireAdmin, (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    const sendSnapshot = (snapshot: ReturnType<typeof presenceTracker.getSnapshot>) => {
+      res.write(`event: presence\ndata: ${JSON.stringify(snapshot)}\n\n`);
+    };
+
+    sendSnapshot(presenceTracker.getSnapshot());
+    const unsubscribe = presenceTracker.subscribe(sendSnapshot);
+
+    const keepAliveTimer = setInterval(() => {
+      res.write(': keepalive\n\n');
+    }, 20_000);
+
+    req.on('close', () => {
+      clearInterval(keepAliveTimer);
+      unsubscribe();
+      res.end();
+    });
   });
 
   app.post('/api/admin/test-supabase', requireAdmin, async (_req, res) => {

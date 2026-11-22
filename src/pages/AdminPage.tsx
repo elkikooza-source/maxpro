@@ -4,6 +4,8 @@ import {
   Check,
   Database,
   Edit3,
+  Eye,
+  EyeOff,
   KeyRound,
   Loader2,
   Lock,
@@ -14,6 +16,7 @@ import {
   ShieldAlert,
   Trash2,
   Upload,
+  Users,
   X,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
@@ -22,6 +25,7 @@ import {
   ORDER_STATUSES,
   type AdminOverviewStats,
   type Category,
+  type LivePresenceStats,
   type Order,
   type OrderStatus,
   type Product,
@@ -82,6 +86,13 @@ function formatCountdown(totalSeconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+function formatDurationSeconds(totalSeconds: number): string {
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
 export default function AdminPage() {
   const { lang, t, refreshStorefront } = useStore();
 
@@ -129,6 +140,10 @@ export default function AdminPage() {
   const [pwNewUsername, setPwNewUsername] = useState('');
   const [pwSaving, setPwSaving] = useState(false);
   const [pwError, setPwError] = useState('');
+
+  const [presence, setPresence] = useState<LivePresenceStats | null>(null);
+  const [showLiveVisitors, setShowLiveVisitors] = useState(true);
+  const [showLiveVisitorDetails, setShowLiveVisitorDetails] = useState(false);
 
   const showToast = useCallback((type: 'ok' | 'err', text: string) => {
     setToast({ type, text });
@@ -196,18 +211,20 @@ export default function AdminPage() {
     if (!authStatus?.authenticated) return;
     setDataLoading(true);
     try {
-      const [ovRes, prRes, orRes, caRes, seRes] = await Promise.all([
+      const [ovRes, prRes, orRes, caRes, seRes, presRes] = await Promise.all([
         authFetch('/api/admin/overview'),
         authFetch('/api/admin/products'),
         authFetch('/api/admin/orders'),
         authFetch('/api/admin/categories'),
         authFetch('/api/admin/settings'),
+        authFetch('/api/admin/presence'),
       ]);
       if (ovRes.ok) setOverview(await ovRes.json());
       if (prRes.ok) setProducts(((await prRes.json()).products || []) as Product[]);
       if (orRes.ok) setOrders(((await orRes.json()).orders || []) as Order[]);
       if (caRes.ok) setCategories(((await caRes.json()).categories || []) as Category[]);
       if (seRes.ok) setSettingsDraft(((await seRes.json()).settings || null) as SiteSettings);
+      if (presRes.ok) setPresence((await presRes.json()) as LivePresenceStats);
     } finally {
       setDataLoading(false);
     }
@@ -219,8 +236,62 @@ export default function AdminPage() {
         setPwNewUsername((prev) => prev || authStatus.username || '');
       }
       void loadAdminData();
+    } else {
+      setPresence(null);
     }
   }, [authStatus?.authenticated, authStatus?.username, loadAdminData]);
+
+  // Admin-only real-time visitor stream (SSE with graceful polling fallback)
+  useEffect(() => {
+    if (!authStatus?.authenticated || !showLiveVisitors) return;
+
+    let closed = false;
+    let fallbackPollTimer: number | null = null;
+    let es: EventSource | null = null;
+
+    const fetchPresenceOnce = async () => {
+      try {
+        const res = await authFetch('/api/admin/presence');
+        if (!closed && res.ok) {
+          setPresence((await res.json()) as LivePresenceStats);
+        }
+      } catch {
+        // Ignore transient poll errors
+      }
+    };
+
+    const startFallbackPoll = () => {
+      if (fallbackPollTimer !== null) return;
+      fallbackPollTimer = window.setInterval(() => {
+        void fetchPresenceOnce();
+      }, 10_000);
+    };
+
+    if (typeof EventSource !== 'undefined') {
+      es = new EventSource('/api/admin/presence/stream', { withCredentials: true });
+      es.addEventListener('presence', (event: MessageEvent) => {
+        if (closed) return;
+        try {
+          setPresence(JSON.parse(event.data) as LivePresenceStats);
+        } catch {
+          // Ignore malformed event payload
+        }
+      });
+      es.onerror = () => {
+        if (closed) return;
+        startFallbackPoll();
+      };
+    } else {
+      void fetchPresenceOnce();
+      startFallbackPoll();
+    }
+
+    return () => {
+      closed = true;
+      if (es) es.close();
+      if (fallbackPollTimer !== null) window.clearInterval(fallbackPollTimer);
+    };
+  }, [authStatus?.authenticated, showLiveVisitors, authFetch]);
 
   const handleSetup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -841,7 +912,30 @@ export default function AdminPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setShowLiveVisitors((v) => !v)}
+            title={showLiveVisitors ? 'Masquer le compteur de visiteurs en direct' : 'Afficher les clients en direct'}
+            className="min-h-[40px] px-3.5 rounded-xl border border-white/10 bg-white/[0.04] text-xs font-medium text-zinc-200 hover:bg-white/[0.08] inline-flex items-center gap-2 cursor-pointer"
+          >
+            {showLiveVisitors ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <Users className="w-3.5 h-3.5 text-zinc-300" />
+                <span className="tabular-nums">
+                  {presence ? `${presence.active_clients} client${presence.active_clients > 1 ? 's' : ''} en ligne` : 'Clients en ligne'}
+                </span>
+                <Eye className="w-3.5 h-3.5 text-zinc-400" />
+              </>
+            ) : (
+              <>
+                <EyeOff className="w-3.5 h-3.5 text-zinc-400" />
+                <span>Clients en ligne (masqué)</span>
+              </>
+            )}
+          </button>
+
           <button
             type="button"
             onClick={() => void loadAdminData()}
@@ -934,6 +1028,88 @@ export default function AdminPage() {
               </div>
             ))}
           </div>
+
+          {showLiveVisitors && (
+            <div className="glass-surface rounded-2xl p-5 sm:p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-11 h-11 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-center text-white shrink-0">
+                    <Users className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="text-xs uppercase tracking-[0.14em] text-zinc-400 font-medium">
+                        Clients sur le site en direct
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-2.5 mt-0.5">
+                      <span className="text-2xl sm:text-3xl font-semibold text-white tabular-nums">
+                        {presence?.active_clients ?? 0}
+                      </span>
+                      <span className="text-xs text-zinc-400">
+                        {(presence?.active_clients ?? 0) > 1
+                          ? 'visiteurs actifs en ce moment'
+                          : 'visiteur actif en ce moment'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {[
+                    { label: 'Accueil', count: presence?.by_section.home ?? 0 },
+                    { label: 'Boutique', count: presence?.by_section.shop ?? 0 },
+                    { label: 'Fiches produits', count: presence?.by_section.product ?? 0 },
+                    { label: 'Commande', count: presence?.by_section.checkout ?? 0 },
+                  ].map((sec) => (
+                    <div
+                      key={sec.label}
+                      className="px-3 py-1.5 rounded-xl bg-black/35 border border-white/[0.08] text-xs flex items-center gap-2"
+                    >
+                      <span className="text-zinc-400">{sec.label}</span>
+                      <span className="font-semibold text-white tabular-nums">{sec.count}</span>
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={() => setShowLiveVisitorDetails((v) => !v)}
+                    className="min-h-[32px] px-3 rounded-xl border border-white/10 text-xs text-zinc-300 hover:text-white hover:bg-white/[0.06] cursor-pointer"
+                  >
+                    {showLiveVisitorDetails ? 'Masquer détails' : 'Voir détails'}
+                  </button>
+                </div>
+              </div>
+
+              {showLiveVisitorDetails && (
+                <div className="pt-4 border-t border-white/[0.08]">
+                  {!presence || presence.visitors.length === 0 ? (
+                    <p className="text-xs text-zinc-400">
+                      Aucun visiteur client connecté sur la boutique pour le moment.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                      {presence.visitors.map((visitor, idx) => (
+                        <div
+                          key={`${visitor.path}-${idx}`}
+                          className="px-3.5 py-2.5 rounded-xl bg-black/35 border border-white/[0.07] flex items-center justify-between gap-3 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-medium text-white truncate">{visitor.page_label}</p>
+                            <p className="text-[11px] text-zinc-500 truncate">{visitor.path}</p>
+                          </div>
+                          <span className="text-[11px] text-emerald-300 tabular-nums shrink-0">
+                            {formatDurationSeconds(visitor.active_seconds)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-6 glass-surface rounded-2xl p-6 space-y-4">
